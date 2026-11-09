@@ -1,0 +1,58 @@
+{
+  "name": "terra-asia",
+  "version": "0.7.0",
+  "description": "TerraAsia · 亚洲三维地形沙盘（中国主体）— Vite + React + Three.js 实时地形可视化，讲清三级阶梯与山川江河",
+  "private": true,
+  "license": "UNLICENSED",
+  "author": "eason",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "npm run data && npm run mask && npm run publish && npm run world && npm run app",
+    "build:data": "npm run data && npm run mask && npm run publish",
+    "build:app": "npm run app",
+    "data": "node scripts/py.js src/pipeline/prep_data.py",
+    "world": "node scripts/py.js src/pipeline/prep_world.py",
+    "cities": "node scripts/py.js src/pipeline/prep_cities.py",
+    "mask": "node scripts/py.js src/pipeline/split_mask.py",
+    "publish": "node scripts/py.js src/pipeline/publish_data.py",
+    "app": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "verify": "node scripts/py.js tests/verify_build.py",
+    "check": "node scripts/check-render.js",
+    "shots": "node scripts/capture-shots.js",
+    "shot": "node scripts/shot.js",
+    "deploy:setup": "bash deploy/setup-server.sh",
+    "check:func": "node scripts/check-func.js"
+  },
+  "keywords": [
+    "three.js",
+    "react",
+    "vite",
+    "webgl",
+    "terrain",
+    "dem",
+    "geography",
+    "china",
+    "asia"
+  ],
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@types/three": "^0.160.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "playwright-core": "^1.65.0",
+    "typescript": "^5.7.2",
+    "vite": "^5.4.11"
+  },
+  "dependencies": {
+    "@react-three/drei": "^9.117.3",
+    "@react-three/fiber": "^8.17.10",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "three": "^0.160.0",
+    "zustand": "^5.0.2"
+  }
+}

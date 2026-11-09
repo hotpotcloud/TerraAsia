@@ -1,0 +1,11 @@
+# 统一换行与二进制判定
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.gif binary
+*.woff2 binary
+
+# 数据文件不做 diff
+data/**/*.json linguist-generated=true
+data/**/*.gmt linguist-data-messages=true

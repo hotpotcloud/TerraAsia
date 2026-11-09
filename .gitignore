@@ -1,0 +1,28 @@
+# 依赖 / 环境
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# 数据缓存（可重新下载，体积大）
+data/cache/
+
+# 构建中间产物
+build/
+# 前端运行时数据（由 Python 管线产出，体积大）
+app/public/data/
+
+# 交付物（CI 构建，不入库）
+dist/
+
+# 本地校验与截图
+check.png
+shots/
+*.local.*
+
+# 编辑器 / 系统
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

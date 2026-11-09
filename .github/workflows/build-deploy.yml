@@ -1,0 +1,168 @@
+name: build-deploy
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '**.md'
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# 同一分支只保留最新一次运行，避免并发部署互相覆盖
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: '3.11'
+  NODE_VERSION: '20'
+
+jobs:
+  build:
+    name: 构建与校验
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 准备 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: 准备 Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: 安装 Python 依赖
+        run: pip install -r requirements.txt
+
+      - name: 安装前端依赖
+        run: npm ci
+
+      # DEM 瓦片约 40MB / 756 张；bbox 或下载逻辑变了才换 key
+      - name: 恢复 DEM 瓦片缓存
+        uses: actions/cache@v4
+        with:
+          path: data/cache/tiles
+          key: dem-tiles-${{ hashFiles('src/pipeline/prep_data.py') }}
+          restore-keys: |
+            dem-tiles-
+
+      # 数据管线（DEM → 高度场 / 掩膜 / 世界底图 / 静态资源）+ tsc + vite build
+      - name: 构建
+        run: npm run build
+
+      - name: 校验产物（dist/ 静态站点）
+        run: npm run verify
+
+      - name: 整理部署文件
+        run: |
+          set -euo pipefail
+          rm -rf deploy-out
+          cp -r dist deploy-out
+          find deploy-out -maxdepth 2 -type f | sort | xargs ls -lh
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: terra-asia-dist
+          path: deploy-out
+          retention-days: 14
+
+  deploy:
+    name: 部署到腾讯云
+    needs: build
+    if: |
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: http://${{ vars.SSH_HOST || '119.29.189.103' }}:${{ vars.SITE_PORT || '8159' }}
+    env:
+      SSH_HOST: ${{ vars.SSH_HOST || '119.29.189.103' }}
+      SSH_USER: ${{ vars.SSH_USER || 'root' }}
+      # 注意：SSH_PORT 是 SSH 连接端口（连服务器用），SITE_PORT 是站点端口（nginx 监听 + 冒烟检查用）
+      SSH_PORT: ${{ vars.SSH_PORT || '22' }}
+      SITE_PORT: ${{ vars.SITE_PORT || '8159' }}
+      DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/var/www/terra-asia' }}
+      KEEP_RELEASES: '5'
+      SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+      SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+    steps:
+      - name: 取回产物
+        uses: actions/download-artifact@v4
+        with:
+          name: terra-asia-dist
+          path: deploy-out
+
+      - name: 上传并原子切换
+        run: |
+          set -euo pipefail
+
+          if [ -z "${SSH_PRIVATE_KEY}" ]; then
+            echo "::error::缺少 secrets.SSH_PRIVATE_KEY（部署私钥）"
+            exit 1
+          fi
+
+          # 每次发布一个完整目录：hashed 资源可以放心长缓存，回滚只需切软链
+          REL="releases/${GITHUB_RUN_NUMBER}-${GITHUB_SHA:0:7}"
+          PRUNE_FROM=$((KEEP_RELEASES + 1))
+
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+
+          if [ -n "${SSH_KNOWN_HOSTS:-}" ]; then
+            printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          else
+            echo "::warning::未配置 secrets.SSH_KNOWN_HOSTS，回退到 ssh-keyscan（存在中间人风险，建议补上）"
+            ssh-keyscan -p "$SSH_PORT" -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          fi
+
+          SSH_OPTS=(-i "$HOME/.ssh/id_deploy" -p "$SSH_PORT" -o StrictHostKeyChecking=yes -o ConnectTimeout=15)
+          TARGET="${SSH_USER}@${SSH_HOST}"
+
+          ssh "${SSH_OPTS[@]}" "$TARGET" "mkdir -p '${DEPLOY_PATH}/releases'"
+
+          rsync -az --delete -e "ssh ${SSH_OPTS[*]}" \
+            deploy-out/ "${TARGET}:${DEPLOY_PATH}/${REL}/"
+
+          # nginx 的 root 指向 current 软链；先建临时链再 mv -T 覆盖，切换是原子的
+          ssh "${SSH_OPTS[@]}" "$TARGET" "
+            set -eu
+            cd '${DEPLOY_PATH}'
+            ln -sfn '${REL}' .current.new
+            mv -Tf .current.new current
+            ls -1dt releases/*/ 2>/dev/null | tail -n +${PRUNE_FROM} | xargs -r rm -rf
+            echo '已切换 -> ${REL}'
+            ls -l current
+            du -sh '${REL}'
+          "
+
+      - name: 冒烟检查
+        run: |
+          set -euo pipefail
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "http://${SSH_HOST}:${SITE_PORT}/" || true)
+          echo "GET http://${SSH_HOST}:${SITE_PORT}/ -> ${code}"
+          if [ "$code" != "200" ]; then
+            echo "::error::站点返回 ${code}。文件已上传，但外网访问不通，检查：① nginx 是否运行 ② 腾讯云防火墙是否放通 ${SITE_PORT} 端口 ③ deploy/setup-server.sh 是否执行过（注意它的第二个参数要跟 SITE_PORT 一致）"
+            exit 1
+          fi
+          # 首页必须真的是沙盘（避免 200 但内容是默认页 / 目录列表）
+          if ! curl -s --max-time 20 "http://${SSH_HOST}:${SITE_PORT}/" | grep -q '沙盘'; then
+            echo "::error::首页返回 200 但内容不是 TerraAsia 页面，检查 nginx root 是否指向 ${DEPLOY_PATH}/current"
+            exit 1
+          fi
+          # 数据与入口脚本也要能取到，否则白屏
+          for p in /data/terrain.png /data/data.json; do
+            c=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "http://${SSH_HOST}:${SITE_PORT}${p}" || true)
+            echo "GET ${p} -> ${c}"
+            [ "$c" = "200" ] || { echo "::error::${p} 取不到（${c}）"; exit 1; }
+          done

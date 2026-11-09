@@ -1,0 +1,5 @@
+# 数据管线依赖
+# pip install -r requirements.txt
+numpy>=1.24
+Pillow>=9.5
+requests>=2.28

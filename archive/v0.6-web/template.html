@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>亚洲三维地形沙盘 · 中国主体（产品原型）</title>
+<style>
+  html, body { margin:0; padding:0; height:100%; overflow:hidden; background:#060d16;
+    font-family:"Noto Sans SC","Microsoft YaHei","PingFang SC",sans-serif; color:#d7e3ee; }
+  #app { position:absolute; inset:0; }
+  canvas { display:block; }
+  #labels { position:absolute; inset:0 336px 0 0; pointer-events:none; overflow:hidden; }
+  body.nopanel #labels { inset:0; }
+
+  .lb { position:absolute; transform:translate(-50%,-50%); white-space:nowrap;
+    font-size:11.5px; letter-spacing:.06em; text-shadow:0 0 6px rgba(0,0,0,.95),0 1px 2px rgba(0,0,0,.9);
+    transition:opacity .6s; pointer-events:none; }
+  .lb-m { color:#e9c98a; }          /* 山脉 */
+  .lb-m::before { content:"△ "; color:#e9c98a; font-size:10px; }
+  .lb-t { color:#8fd0f5; font-weight:600; }  /* 地形区 */
+  .lb-w { color:#5fc9e0; font-style:italic; } /* 水体 */
+  .lb-r { color:#4db8f0; }            /* 河流 */
+  .lb-p { color:#ff8f7a; font-weight:700; }   /* 主峰 */
+  .lb-i { color:#f5c542; font-weight:700; font-size:13px; } /* 南海诸岛 */
+  .lb-c1 { color:#eaf3fb; font-weight:600; font-size:10.5px; letter-spacing:.02em; }
+  .lb-c1::before { content:""; display:inline-block; width:4px; height:4px; border-radius:50%;
+    background:#eaf3fb; margin-right:4px; vertical-align:2px; box-shadow:0 0 4px rgba(234,243,251,.9); }
+  .lb-c2 { color:#a9c6dd; font-size:10px; }
+  .lb-c2::before { content:""; display:inline-block; width:3px; height:3px; border-radius:50%;
+    background:#8fb2cc; margin-right:4px; vertical-align:2px; }
+  .lb-n { color:#6d8398; font-size:10.5px; font-style:italic; letter-spacing:.14em; } /* 邻国弱化 */
+  .lb-nf { color:#5a7386; font-size:9.8px; letter-spacing:.1em; }                  /* 境外山河(最弱) */
+  .lb-nf::before { content:"· "; color:#44606f; }
+  #provName { font-size:15px; font-weight:700; color:#ffa64d; letter-spacing:.06em; }
+  #provMeta { font-size:12px; color:#b7cede; line-height:1.8; margin-top:4px; }
+  #provMeta b { color:#e6f2fb; }
+  .lb-l { color:#ff9f6b; font-size:11px; border-bottom:1px dashed rgba(255,159,107,.6); padding-bottom:1px; } /* 阶梯分界 */
+  .lb-s { color:#d3b6ff; font-size:10.5px; }                       /* 名山·山峰(近景) */
+  .lb-s::before { content:"▲ "; color:#b795f0; font-size:8.5px; vertical-align:1px; }
+  .lb-v { color:#96dcae; font-size:10.3px; }                       /* 景区·湖泊(超近景) */
+  .lb-u { color:#cfb2ff; font-size:10.3px; }                       /* 名山(近景) */
+  .lb-u::before { content:"▲ "; color:#b795f0; font-size:8px; vertical-align:1px; }
+  .lb-v::before { content:"◆ "; color:#6fc894; font-size:8px; vertical-align:1px; }
+  .lb-cc { color:#c6e8ff; font-size:10.6px; letter-spacing:.02em; opacity:.96; }   /* 地级市名 */
+  .lb-cc::before { content:"· "; color:#7fb6dd; }
+  .lb-rl { color:#eef3f9; font-size:10px; letter-spacing:.02em; border-bottom:1px solid rgba(223,232,242,.35); }  /* 铁路线名 */
+  .lb-rd { color:#ff9aae; font-size:10px; letter-spacing:.02em; border-bottom:1px dotted rgba(255,107,138,.55); }  /* 公路线名 */
+
+  #loading { position:absolute; inset:0; background:#060d16; z-index:50; display:flex;
+    flex-direction:column; align-items:center; justify-content:center; gap:18px; }
+  #loading .spin { width:44px; height:44px; border:3px solid #14304a; border-top-color:#38bdf8;
+    border-radius:50%; animation:sp 1s linear infinite; }
+  @keyframes sp { to { transform:rotate(360deg); } }
+  #loading .txt { color:#7fa6c4; font-size:14px; letter-spacing:.15em; }
+
+  .panel { position:absolute; background:rgba(10,22,35,.86); border:1px solid #1b3560; border-radius:10px; backdrop-filter:blur(6px); }
+
+  #title { top:16px; left:16px; padding:14px 18px; z-index:10; }
+  #title .badge { display:inline-block; font-size:11px; color:#f5c542; border:1px solid #6b5a1e;
+    border-radius:4px; padding:1px 7px; margin-bottom:6px; letter-spacing:.2em; }
+  #title h1 { margin:0; font-size:21px; font-weight:700; color:#eef6fc; letter-spacing:.12em; }
+  #title .sub { margin-top:4px; font-size:12.5px; color:#8fb2cc; letter-spacing:.1em; }
+
+  #side { top:16px; right:16px; width:308px; z-index:10; padding:0; max-height:calc(100% - 70px);
+    display:flex; flex-direction:column; overflow-y:auto; scrollbar-width:thin; }
+  #side .sec { padding:11px 14px; border-bottom:1px solid #14283e; }
+  #side .sec:last-child { border-bottom:none; }
+  #side h3 { margin:0 0 7px; font-size:13px; color:#9fc6e4; letter-spacing:.18em; font-weight:600; }
+  #stepName { font-size:16px; font-weight:700; color:#f5c542; margin-bottom:6px; }
+  #stepText { font-size:12.8px; line-height:1.75; color:#c4d6e5; max-height:150px; overflow:auto; }
+  .btnrow { display:flex; gap:8px; margin-top:10px; flex-wrap:wrap; }
+  button.b { background:#122c48; color:#cfe6f7; border:1px solid #275179; border-radius:6px;
+    padding:6px 12px; font-size:12.5px; cursor:pointer; font-family:inherit; }
+  button.b:hover { background:#1a3d63; }
+  button.b.on { background:#0e4d73; border-color:#38bdf8; color:#fff; }
+
+  .legend { display:grid; grid-template-columns:auto 1fr; gap:6px 10px; font-size:12px; color:#a9c2d6; }
+  .legend .sw { width:26px; height:13px; border-radius:3px; border:1px solid rgba(255,255,255,.18); }
+
+  .ctl { display:flex; align-items:center; gap:8px; font-size:12.3px; color:#a9c2d6; margin:7px 0; }
+  .ctl label { min-width:64px; }
+  input[type=range] { flex:1; accent-color:#38bdf8; }
+  .chk { display:flex; align-items:center; gap:7px; font-size:12.3px; color:#a9c2d6;
+    margin:4.5px 0; cursor:pointer; user-select:none; }
+  .chk input { accent-color:#38bdf8; }
+
+  #foot { position:absolute; left:16px; bottom:14px; z-index:10; max-width:46%; font-size:10.8px;
+    line-height:1.6; color:#5f7d96; background:rgba(8,17,28,.72); padding:8px 12px; border-radius:8px;
+    border:1px solid #122438; }
+  #compass { position:absolute; right:344px; bottom:18px; width:44px; height:44px; z-index:10;
+    background:rgba(10,22,35,.8); border:1px solid #1b3560; border-radius:50%; }
+  #compass .n { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; }
+  #compass .n::before { content:""; width:0; height:0; border-left:5px solid transparent;
+    border-right:5px solid transparent; border-bottom:14px solid #e2543f; position:absolute; top:5px; }
+  #compass .n::after { content:"北"; position:absolute; top:1px; font-size:9px; color:#e2543f; }
+  #hint { position:absolute; right:16px; bottom:66px; z-index:10; font-size:11px; color:#6f8aa3;
+    background:rgba(8,17,28,.72); padding:6px 10px; border-radius:6px; border:1px solid #122438; }
+  #sideToggle { position:absolute; top:16px; right:16px; z-index:11; }
+  #side.hidden { display:none; }
+  #side.hidden ~ #sideToggle { }
+  .err { color:#ff8f7a; font-size:13px; }
+
+  /* 暗角: 把视线往画面中心收, 沙盘边缘不抢注意力 */
+  #vignette { position:absolute; inset:0; pointer-events:none; z-index:4;
+    background:radial-gradient(ellipse 74% 66% at 50% 47%, rgba(0,0,0,0) 40%, rgba(0,0,0,.46) 100%); }
+
+  /* 分段控件 */
+  .seg { display:flex; }
+  .seg button { border-radius:0; margin-left:-1px; }
+  .seg button:first-child { border-radius:6px 0 0 6px; margin-left:0; }
+  .seg button:last-child { border-radius:0 6px 6px 0; }
+
+  @media (max-width:860px){ #side{display:none;} #foot{max-width:70%;} #compass{right:16px;} #hint{display:none;} }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+<div id="vignette"></div>
+
+<div id="loading"><div class="spin"></div><div class="txt" id="loadTxt">正在构建三维地形…</div></div>
+
+<div class="panel" id="title">
+  <span class="badge">产 品 原 型</span>
+  <h1>亚洲三维地形沙盘</h1>
+  <div class="sub">中国为主体 · 三级阶梯 · 山川江河 · 动态演示</div>
+</div>
+
+<button class="b" id="sideToggle" style="position:absolute;top:16px;right:16px;z-index:12;">☰ 面板</button>
+<div class="panel" id="side">
+  <div class="sec" id="provCard" style="display:none">
+    <h3>已选省级行政区</h3>
+    <div id="provName"></div>
+    <div id="provMeta"></div>
+    <div class="btnrow"><button class="b" id="btnClearProv">取消选择</button></div>
+  </div>
+  <div class="sec">
+    <h3>阶梯导览</h3>
+    <div id="stepName">—</div>
+    <div id="stepText"></div>
+    <div class="btnrow">
+      <button class="b" id="btnPrev">上一步</button>
+      <button class="b" id="btnNext">下一步</button>
+      <button class="b" id="btnAuto">自动演示</button>
+      <button class="b" id="btnReplay">重播开场</button>
+    </div>
+  </div>
+  <div class="sec">
+    <h3>图例</h3>
+    <div class="legend">
+      <div class="sw" style="background:#8a5a3c"></div><div>第一阶梯 · 平均海拔 4000m+（青藏高原）</div>
+      <div class="sw" style="background:#c2a25b"></div><div>第二阶梯 · 1000–2000m（高原·盆地）</div>
+      <div class="sw" style="background:#4a9152"></div><div>第三阶梯 · 500m 以下（平原·丘陵）</div>
+      <div class="sw" style="background:#e8ebee"></div><div>雪线 · 5000m 以上（雪山冰川）</div>
+      <div class="sw" style="background:#43494d"></div><div>中国以外亚洲地区 · 去饱和冷灰（保留真实起伏，退为底衬）</div>
+      <div class="sw" style="background:#dfe8f2"></div><div>铁路干线（银白，标注线名）</div>
+      <div class="sw" style="background:#ff6b8a"></div><div>公路干线（玫瑰红，G 字头国家高速）</div>
+    </div>
+  </div>
+  <div class="sec">
+    <h3>视图模式</h3>
+    <div class="btnrow seg" style="margin-top:0">
+      <button class="b on" id="btnFlat" style="flex:1">平面沙盘</button>
+      <button class="b" id="btnGlobe" style="flex:1">地球 3D</button>
+    </div>
+    <div id="viewHint" style="font-size:11.5px;line-height:1.7;color:#7c98b0;margin-top:8px">
+      平面模式适合读阶梯与省界；地球模式可自由转动整颗星球，看中国在亚洲、亚洲在世界的位置。
+    </div>
+  </div>
+  <div class="sec">
+    <h3>视角</h3>
+    <div class="btnrow">
+      <button class="b" id="btnViewAsia">亚洲全景</button>
+      <button class="b" id="btnViewCN">聚焦中国</button>
+      <button class="b" id="btnViewStep">当前导览</button>
+    </div>
+  </div>
+  <div class="sec">
+    <h3>光照</h3>
+    <div class="ctl"><label>太阳方位</label><input type="range" id="sunAz" min="0" max="360" step="1" value="315"><span id="sunAzV" style="min-width:38px">315°</span></div>
+    <div class="ctl"><label>太阳高度</label><input type="range" id="sunEl" min="6" max="82" step="1" value="40"><span id="sunElV" style="min-width:38px">40°</span></div>
+    <label class="chk"><input type="checkbox" id="ckShadow" checked>地形投射阴影（自遮挡）</label>
+    <label class="chk"><input type="checkbox" id="ckAO" checked>天空遮蔽（沟谷压暗）</label>
+  </div>
+  <div class="sec">
+    <h3>控制</h3>
+    <div class="ctl"><label>立体感</label><input type="range" id="exag" min="1" max="16" step="0.5" value="8.5"><span id="exagV" style="min-width:40px">8.5×</span></div>
+    <label class="chk"><input type="checkbox" id="ckAutoRot">自动旋转</label>
+    <label class="chk"><input type="checkbox" id="ckM" checked>山脉标注</label>
+    <label class="chk"><input type="checkbox" id="ckT" checked>地形区标注</label>
+    <label class="chk"><input type="checkbox" id="ckR" checked>河流·水体标注</label>
+    <label class="chk"><input type="checkbox" id="ckCity" checked>城市标注（放大分级）</label>
+    <label class="chk"><input type="checkbox" id="ckScenic" checked>山峰·景区标注（近景显示）</label>
+    <label class="chk"><input type="checkbox" id="ckNb" checked>亚洲国家名（弱化）</label>
+    <label class="chk"><input type="checkbox" id="ckNbF" checked>境外山脉·河流名（弱化）</label>
+    <label class="chk"><input type="checkbox" id="ckProv">省级行政区界（可点选）</label>
+    <label class="chk"><input type="checkbox" id="ckCityDiv" checked>地级市界（点选省份后）</label>
+    <label class="chk"><input type="checkbox" id="ckRail">铁路干线（可标注线名）</label>
+    <label class="chk"><input type="checkbox" id="ckRoad">公路干线（G 字头高速）</label>
+    <label class="chk"><input type="checkbox" id="ckTierLine">阶梯分界线（教学辅助）</label>
+    <label class="chk"><input type="checkbox" id="ckDash" checked>十段线</label>
+  </div>
+</div>
+
+<div id="foot">
+  范围：东经 25°–180°、北纬 11°S–80°N，覆盖整个亚洲。<b style="color:#c9a53f">中国为主体</b>：境内按三级阶梯分层设色并标注山川江河，中国以外的亚洲地区保留真实地形但去饱和压暗为底衬，只为交代"中国在哪里、周围是什么"。<br>
+  数据与合规：中国国界/省级行政区划（含台湾省、香港·澳门特别行政区、南海诸岛）— 阿里云 DataV GeoAtlas；十段线 — GMT 中文社区；高程 — SRTM/GDEM（Terrarium，含海底地形）。垂直方向已夸张、横向为真实比例。<b style="color:#c9a53f">中国以外地区的国界并未绘制</b>，仅以地形与国名示意；正式发布须替换为带审图号（如 GS(2024)0650）的标准地图数据并履行送审程序。
+</div>
+<div id="compass"><div class="n" id="compassN"></div></div>
+<div id="hint">左键旋转 · 滚轮缩放 · 右键平移 · 点击省份高亮</div>
+
+<script type="module">
+const DATA = __DATA_JSON__;
+
+__SCRIPTS__
+</script>
+</body>
+</html>
