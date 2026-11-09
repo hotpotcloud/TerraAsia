@@ -102,10 +102,9 @@ TerraAsia/
 
 ## 部署
 
-推 `main` 即自动构建并发布到腾讯云轻量服务器（`http://119.29.189.103:8159/`，站点端口 8159，80 不对外）：CI 把整份 `dist/` 传成 `releases/<run>-<sha>/`，再原子切换 `current` 软链，nginx 的 root 指向 `current`。
+`main` 每次 push 由 GitHub Actions 自动构建、校验并发布（构建 → 产物校验 → 上传 → 原子切换）。
 
-首次上线需要两件事：服务器执行 `deploy/setup-server.sh`、仓库配置 `SSH_PRIVATE_KEY`。
-完整步骤、密钥生成、回滚与排障见 **[docs/03-部署运维.md](docs/03-部署运维.md)**。
+服务器初始化、密钥与仓库变量配置、发布与回滚、排障，全部见 **[docs/03-部署运维.md](docs/03-部署运维.md)**。
 
 ## 文档
 
