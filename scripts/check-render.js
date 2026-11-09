@@ -63,12 +63,26 @@ const { serveDist, LAUNCH } = require('./lib/serve');
       }
     }
 
+    // 两层地形的平面对位：全球底图必须被搬到亚洲层坐标系里经度 0/纬度 0 处。
+    // 差一点点就够让底图的高地顶穿亚洲层，出现「整片区域没显示」。
+    let layersAligned = null;
+    let layerDelta = null;
+    if (window.__ta && window.__ta.frames) {
+      const f = window.__ta.frames();
+      if (f.world) {
+        layerDelta = [f.world[0] - f.expect[0], f.world[2] - f.expect[1]].map((v) => +v.toFixed(2));
+        layersAligned = Math.abs(layerDelta[0]) < 1 && Math.abs(layerDelta[1]) < 1;
+      }
+    }
+
     return {
       hasCanvas: !!document.querySelector('.scene-root canvas'),
       loadingGone: !document.querySelector('.loading'),
       labelCount: els.length,
       labelVisible: vis.length,
       labelOverlaps: overlaps,
+      layersAligned,
+      layerDelta,
       detail: window.__ta ? window.__ta.info() : null,
     };
   });
@@ -85,6 +99,7 @@ const { serveDist, LAUNCH } = require('./lib/serve');
     // 全被避让掉也是回归：标注是主要内容，不能一枚都不剩
     info.labelVisible >= 6 &&
     info.labelOverlaps === 0 &&
+    info.layersAligned !== false &&
     errors.length === 0;
   console.log(JSON.stringify({ ok, ready, ...info, errors }, null, 2));
   process.exit(ok ? 0 : 1);

@@ -50,6 +50,13 @@ export function SceneView({ asia, world, compassRef }: Props) {
 
   const initial = useMemo(() => shotAt(asia, exag, 0), [asia, exag]);
 
+  /**
+   * 全球底图在平面模式下的对齐偏移：底图自己以「本初子午线/赤道」为原点，
+   * 亚洲层以自己图幅中心（东经 102.5°）为原点，两者差了约 102°。
+   * 把底图搬到亚洲层的坐标系里，两层才真正叠在一起（球面模式不用搬，各自映射）。
+   */
+  const worldOffset = useMemo<[number, number]>(() => asia.proj.lonLatToWorld(0, 0), [asia]);
+
   return (
     <SceneContext.Provider value={{ data, handles }}>
       <div className="scene-root">
@@ -61,7 +68,7 @@ export function SceneView({ asia, world, compassRef }: Props) {
         >
           <color attach="background" args={[0x060d16]} />
 
-          <TerrainMesh pack={world} mapping={data.worldMap} world />
+          <TerrainMesh pack={world} mapping={data.worldMap} world flatOffset={worldOffset} />
           <TerrainMesh pack={asia} mapping={data.asiaMap} />
           <VectorLayers />
           <FlowLayers />

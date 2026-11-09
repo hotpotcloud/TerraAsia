@@ -1,5 +1,6 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
+import { useFrame } from '@react-three/fiber';
 import { GLOBE_U, globeGLSL } from '../data/globe';
 import type { FieldPack } from '../data/terrainLoader';
 import type { Mapping } from '../data/globe';
@@ -13,15 +14,23 @@ interface Props {
   mapping: Mapping;
   /** 全球底图：参与图幅渐隐、不投射阴影、不参与开场动画 */
   world?: boolean;
+  /**
+   * 平面模式下把本层搬到共享坐标系所需的世界坐标偏移。
+   * 两层各自以自己的图幅中心为原点（底图中心经度 0°，亚洲层中心经度 102.5°），
+   * 不搬的话平面上会整体错位 ~102°，底图的地形会从下面顶穿亚洲层。
+   * 球面模式下各层自带 lon0/WX 映射，不需要偏移，所以按 uGlobe 淡出。
+   */
+  flatOffset?: [number, number];
 }
 
 /**
  * 一张地形网格。亚洲高精 patch 与全球粗底图共用同一套着色器，
  * 差别只在映射常数与几个开关：底图铺满球面，patch 压在上面无缝衔接。
  */
-export function TerrainMesh({ pack, mapping, world = false }: Props) {
+export function TerrainMesh({ pack, mapping, world = false, flatOffset }: Props) {
   const { handles } = useScene();
   const exag = useAppStore((s) => s.exag);
+  const meshRef = useRef<THREE.Mesh>(null);
 
   const built = useMemo(() => {
     const geo = buildTerrainGeometry(pack, exag, world);
@@ -66,6 +75,14 @@ export function TerrainMesh({ pack, mapping, world = false }: Props) {
     built.setExag(exag);
   }, [exag, built]);
 
+  // 平面模式的对齐偏移：球面模式必须为 0（球面靠各层自己的 lon0/WX 映射对位）
+  useFrame(() => {
+    const mesh = meshRef.current;
+    if (!mesh || !flatOffset) return;
+    const k = 1 - GLOBE_U.value;
+    mesh.position.set(flatOffset[0] * k, 0, flatOffset[1] * k);
+  });
+
   // 卸载时释放 GPU 资源
   useEffect(
     () => () => {
@@ -77,6 +94,8 @@ export function TerrainMesh({ pack, mapping, world = false }: Props) {
 
   return (
     <mesh
+      ref={meshRef}
+      name={world ? 'world-terrain' : 'asia-terrain'}
       geometry={built.geometry}
       material={built.material}
       renderOrder={world ? 0 : 1}

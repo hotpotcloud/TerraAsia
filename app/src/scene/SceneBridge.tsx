@@ -385,6 +385,23 @@ export function SceneBridge({
       sun: (az: number, el: number) => useAppStore.getState().setSun(az, el),
       /** 屏幕归一化坐标（-1..1）处拾取，用于标定与回归脚本 */
       pick: (nx = 0, ny = 0) => pickRef.current?.(nx, ny) ?? null,
+      /** 按经纬度读装载后的数值场，用于排查「某片区域没显示」这类数据/解码问题 */
+      probe: (lon: number, lat: number) => {
+        const [gx, gy] = pack.proj.lonLatToGrid(lon, lat);
+        const i = Math.round(gx);
+        const j = Math.round(gy);
+        if (i < 0 || j < 0 || i >= pack.GW || j >= pack.GH) return null;
+        const n = j * pack.GW + i;
+        return {
+          grid: [i, j],
+          elev: +pack.elev[n].toFixed(1),
+          elevW: +pack.elevW[n].toFixed(1),
+          landW: +pack.landW[n].toFixed(3),
+          cnW: +pack.cnW[n].toFixed(3),
+          tier: pack.tierA[n],
+          depth: +pack.depth[n].toFixed(3),
+        };
+      },
       cam: () => ({
         pos: camera.position.toArray().map((n) => +n.toFixed(2)),
         tgt: (controls.current?.target.toArray() ?? [0, 0, 0]).map((n) => +n.toFixed(2)),
@@ -398,6 +415,33 @@ export function SceneBridge({
         viewMode,
       }),
       uniforms: () => handles.asiaUniforms,
+      /**
+       * 两层地形网格的平面对位信息（合规回归用）。
+       * 全球底图与亚洲层各自以自己的图幅中心为原点，平面上必须靠 flatOffset 对齐；
+       * 一旦对不上，底图的地形就会从下面顶穿亚洲层，出现「某片区域没显示」。
+       */
+      frames: () => {
+        let worldPos: [number, number, number] | null = null;
+        let asiaPos: [number, number, number] | null = null;
+        scene.traverse((o) => {
+          const mesh = o as THREE.Mesh;
+          if (!mesh.isMesh) return;
+          const p3: [number, number, number] = [
+            +mesh.position.x.toFixed(2),
+            +mesh.position.y.toFixed(2),
+            +mesh.position.z.toFixed(2),
+          ];
+          if (mesh.name === 'world-terrain') worldPos = p3;
+          if (mesh.name === 'asia-terrain') asiaPos = p3;
+        });
+        const expect = pack.proj.lonLatToWorld(0, 0);
+        return {
+          world: worldPos,
+          asia: asiaPos,
+          // 底图应落在「亚洲层坐标系里经度 0 / 纬度 0」的位置上
+          expect: [+expect[0].toFixed(2), +expect[1].toFixed(2)],
+        };
+      },
     };
   }, [camera, controls, pack, exag, viewMode, handles]);
 
