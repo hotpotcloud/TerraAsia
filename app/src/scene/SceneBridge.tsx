@@ -372,6 +372,14 @@ export function SceneBridge({
       __ta?: Record<string, unknown>;
     }
     (window as DebugWindow).__ta = {
+      /** 逐层开关，用于定位「某片区域没显示」到底是数据还是两层穿插 */
+      layer: (name: string, on: boolean) => {
+        let hit = 0;
+        scene.traverse((o) => {
+          if (o.name === name) { o.visible = on; hit++; }
+        });
+        return hit;
+      },
       camAt: (lon: number, lat: number, dist = 40, az = 0.5, elev = 35) => {
         const p = camAt(pack, exag, lon, lat, dist, az, elev);
         anim.current = null;

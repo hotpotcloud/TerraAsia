@@ -67,12 +67,15 @@ export function buildVertexColors(pack: FieldPack): { color: Float32Array; edge:
       const k3 = n * 3;
       const lc = rampColor(elev[n]);
       /* 中国以外陆地：保留真实起伏，但去饱和 + 蓝偏 + 压暗 → 「冷灰浮雕底衬」。
-         压暗必须够狠：去饱和会把绿色推向高亮度灰，只降饱和不降亮度整块大陆会发白发平。 */
+         压暗必须够狠：去饱和会把绿色推向高亮度灰，只降饱和不降亮度整块大陆会发白发平。
+         但也不能狠到把起伏抹掉——放大近景时蒙古高原、中南半岛、朝鲜半岛如果压成
+         一片死灰，国境线两侧会强烈断裂，看着像「境外没渲染」。折中：去饱和压到 0.40、
+         亮度压到 ~0.78，保留可见的坡向明暗，让它读作「真实但弱化的邻国」而非「空洞」。 */
       const gL = lc[0] * 0.3 + lc[1] * 0.59 + lc[2] * 0.11;
       const ncol: [number, number, number] = [
-        lerp(lc[0], gL, 0.55) * 0.66,
-        lerp(lc[1], gL, 0.55) * 0.72,
-        lerp(lc[2], gL, 0.55) * 0.84,
+        lerp(lc[0], gL, 0.40) * 0.80,
+        lerp(lc[1], gL, 0.40) * 0.83,
+        lerp(lc[2], gL, 0.40) * 0.88,
       ];
       /* 海洋三段：陆架 / 海盆 / 深海沟。只做两段渐变会糊成一片均匀的蓝，
          看不出「哪里是浅海」。 */
@@ -238,9 +241,11 @@ export function createTerrainMaterial(opts: TerrainMaterialOpts): TerrainMateria
         // 图幅边缘渐隐到背景色（全球底图需要；亚洲 patch 不需要，它要压在世界底图上无缝衔接）
         vec3 base = mix(uBg, vColor, mix(1.0, vEdge, uEdgeMode));
         /* 细节羽化：亚洲 patch 的外圈逐渐撤掉阴影与等高线，让高精度区平滑过渡到
-           粗网格底图 —— 否则世界地图上会出现一个「细节矩形」。 */
+           粗网格底图 —— 否则世界地图上会出现一个「细节矩形」。
+           羽化带要窄：太宽会把中南半岛、印度东北这些本就贴着东经 25° 边缘的
+           区域细节也抽掉，放大后出现「边缘一整条地形发虚/脱节」。 */
         float dEdge = min(min(vUv.x, 1.0 - vUv.x), min(vUv.y, 1.0 - vUv.y));
-        float detail = mix(smoothstep(0.0, 0.022, dEdge), 1.0, uEdgeMode);
+        float detail = mix(smoothstep(0.0, 0.006, dEdge), 1.0, uEdgeMode);
 
         // ---- 陆地 ----
         float sh = 1.0;
@@ -248,7 +253,13 @@ export function createTerrainMaterial(opts: TerrainMaterialOpts): TerrainMateria
           vec2 sunH = vec2(Ll.x, Ll.z);
           float shl = max(length(sunH), 1e-4);
           vec2 duv = vec2(Ll.x / WX_, Ll.z / WZ_) / shl * STEP_;
-          sh = mix(1.0, sunShadow(g, max(vElev, 0.0) * uExag * V0_, duv, STEP_ * (Ll.y / shl)), detail);
+          float shd = sunShadow(g, max(vElev, 0.0) * uExag * V0_, duv, STEP_ * (Ll.y / shl));
+          /* 低海拔平原不参与深度自遮挡：平原没有能投长影的山体，远处微起伏却会
+             在 40 步里累积成 minD→0，把华北/长江/东北平原整片压成死灰（放大后
+             尤其明显，看起来像「地形没渲染」）。用高程把阴影强度淡出，只在丘陵
+             与山区保留沟谷阴影，平原靠光照本身的坡向差异已经足够。 */
+          float shadowGate = smoothstep(120.0, 900.0, vElev);
+          sh = mix(1.0, shd, detail * shadowGate);
         }
         float ndl = max(dot(n, Lw), 0.0);
         /* 天空半球光：朝上的面吃到更多天光，沟谷与背光坡自然压暗。
@@ -303,7 +314,11 @@ export function createTerrainMaterial(opts: TerrainMaterialOpts): TerrainMateria
         }
 
         // ---- 导览压暗 / 省份选中 / 开场升降 ----
-        float dim = vTier > 3.5 ? 0.72 : (vTier < 1.5 ? uDim.x : (vTier < 2.5 ? uDim.y : uDim.z));
+        /* tier 语义：1/2/3 = 中国三级阶梯，4 = 境外陆地，0 = 海洋。
+           导览压暗只作用于「中国境内但当前未聚焦的阶梯」——境外（4）不属于任何
+           阶梯，不该被压暗；之前把 tier>3.5 一律乘 0.72，等于把境外整片再压暗
+           28%，叠加去饱和后境外死灰一片、坡向明暗被抹平，看起来像「没渲染」。 */
+        float dim = vTier > 3.5 ? 1.0 : (vTier < 1.5 ? uDim.x : (vTier < 2.5 ? uDim.y : uDim.z));
         col *= mix(0.30, 1.0, dim);
         col *= (0.22 + 0.78 * vK);
         float smk = texture2D(uSel, vUv).r * uSelAmt;
