@@ -34,10 +34,70 @@ export interface FieldPack {
   sampleHeight(x: number, z: number): number;
 }
 
-async function decodePng(url: string, GW: number, GH: number): Promise<Uint8ClampedArray> {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`地形纹理加载失败 ${url} (${res.status})`);
-  const bmp = await createImageBitmap(await res.blob());
+/** 网络层错误（fetch 直接 reject，如 Failed to fetch / 连接被重置）才重试，HTTP 状态错不重试 */
+const RETRIES = 2;
+
+function isNetError(e: unknown): boolean {
+  return e instanceof TypeError;
+}
+
+function netHint(url: string): string {
+  return (
+    `网络请求失败（重试 ${RETRIES} 次仍失败）：${url} —— ` +
+    '多半是连接被中间设备重置（大文件 + 低带宽常见），请刷新；反复出现则查本机代理/网关'
+  );
+}
+
+async function fetchBlob(
+  url: string,
+  what: string,
+  onChunk?: (delta: number) => void,
+): Promise<Blob> {
+  for (let attempt = 0; attempt <= RETRIES; attempt++) {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`${what}加载失败 ${url} (HTTP ${res.status})`);
+      // 拿不到流（或不需要进度）就直接 blob()
+      if (!onChunk || !res.body) return await res.blob();
+
+      const reader = res.body.getReader();
+      const chunks: Uint8Array[] = [];
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        onChunk(value.length);
+      }
+      return new Blob(chunks as BlobPart[], { type: res.headers.get('content-type') ?? '' });
+    } catch (e) {
+      if (!isNetError(e)) throw e; // HTTP 状态错误直接报，不重试
+      if (attempt < RETRIES) await new Promise((r) => setTimeout(r, 600 * (attempt + 1)));
+    }
+  }
+  throw new Error(netHint(url));
+}
+
+async function fetchJson<T>(url: string, what: string): Promise<T> {
+  for (let attempt = 0; attempt <= RETRIES; attempt++) {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`${what}加载失败 ${url} (HTTP ${res.status})`);
+      return (await res.json()) as T;
+    } catch (e) {
+      if (!isNetError(e)) throw e;
+      if (attempt < RETRIES) await new Promise((r) => setTimeout(r, 600 * (attempt + 1)));
+    }
+  }
+  throw new Error(netHint(url));
+}
+
+async function decodeImage(blob: Blob, GW: number, GH: number, what: string): Promise<Uint8ClampedArray> {
+  let bmp: ImageBitmap;
+  try {
+    bmp = await createImageBitmap(blob);
+  } catch {
+    throw new Error(`${what}解码失败：此浏览器不支持该图片格式（数据是无损 WebP，需要 2020 年后的浏览器）`);
+  }
   const canvas = document.createElement('canvas');
   canvas.width = GW;
   canvas.height = GH;
@@ -46,6 +106,7 @@ async function decodePng(url: string, GW: number, GH: number): Promise<Uint8Clam
   ctx.drawImage(bmp, 0, 0, GW, GH);
   const data = ctx.getImageData(0, 0, GW, GH).data;
   bmp.close();
+  if (data.length < GW * GH * 4) throw new Error(`${what}解码尺寸不对（期望 ${GW}×${GH}）`);
   return data;
 }
 
@@ -130,32 +191,54 @@ export interface LoadOptions {
   pngUrl: string;
   maskUrl: string;
   onStage?: (stage: string) => void;
+  /** 已下载字节数的增量（用于加载页显示真实进度，不估算百分比） */
+  onBytes?: (delta: number) => void;
 }
 
-export async function loadFieldPack(opts: LoadOptions): Promise<FieldPack> {
-  const report = opts.onStage ?? (() => {});
-  report('读取元数据');
-  let json: TerrainJSON | null = null;
-  let meta: Meta;
+/** 只下载、不解码：网络阶段。两个包可以先并行拉，再按顺序解码 */
+export interface RawPack {
+  json: TerrainJSON | null;
+  meta: Meta;
+  png: Blob;
+  mask: Blob;
+}
+
+/**
+ * 拉取一个包的全部字节。元数据、地形图、掩膜三路并发 —— 串行拉的话
+ * 3 Mbps 上白白多花一整轮 RTT。
+ */
+export async function fetchFieldPack(opts: LoadOptions): Promise<RawPack> {
+  const metaReq = (async () => {
+    const url = opts.jsonUrl ?? opts.metaUrl!;
+    return await fetchJson<Meta | TerrainJSON>(url, '数据索引');
+  })();
+
+  const [doc, png, mask] = await Promise.all([
+    metaReq,
+    fetchBlob(opts.pngUrl, '地形纹理', opts.onBytes),
+    fetchBlob(opts.maskUrl, '陆地掩膜', opts.onBytes),
+  ]);
+
   if (opts.jsonUrl) {
-    const res = await fetch(opts.jsonUrl);
-    if (!res.ok) throw new Error(`数据索引加载失败 ${opts.jsonUrl} (${res.status})`);
-    json = (await res.json()) as TerrainJSON;
-    meta = json.meta;
-  } else {
-    const res = await fetch(opts.metaUrl!);
-    if (!res.ok) throw new Error(`元数据加载失败 (${res.status})`);
-    meta = (await res.json()) as Meta;
+    const json = doc as TerrainJSON;
+    return { json, meta: json.meta, png, mask };
   }
+  return { json: null, meta: doc as Meta, png, mask };
+}
+
+/** 纯 CPU 阶段：解码 PNG/WebP → 数值场 → GPU 纹理 */
+export async function decodeFieldPack(raw: RawPack, onStage?: (stage: string) => void): Promise<FieldPack> {
+  const report = onStage ?? (() => {});
+  const { json, meta } = raw;
 
   const proj = createProjection(meta);
   const { GW, GH } = proj;
   const N = GW * GH;
 
   report('解码地形纹理');
-  const px = await decodePng(opts.pngUrl, GW, GH);
+  const px = await decodeImage(raw.png, GW, GH, '地形纹理');
   report('解码陆地掩膜');
-  const maskPx = await decodePng(opts.maskUrl, GW, GH);
+  const maskPx = await decodeImage(raw.mask, GW, GH, '陆地掩膜');
 
   const elev = new Float32Array(N);
   const landW = new Float32Array(N);

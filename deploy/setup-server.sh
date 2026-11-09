@@ -108,7 +108,7 @@ systemctl reload nginx 2>/dev/null || service nginx reload
 
 # ---------- 4. 自检 ----------
 code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "http://127.0.0.1:${APP_PORT}/" || true)
-log "本机访问 http://127.0.0.1/ -> $code"
+log "本机访问 http://127.0.0.1:${APP_PORT}/ -> $code"
 
 cat <<EOF
 

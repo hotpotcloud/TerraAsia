@@ -46,16 +46,20 @@ node scripts/check-func.js        # 功能回归：点选/双模式/图层/夸�
 ```
 dist/
 ├── index.html          0.7 KB   薄壳
-├── assets/             ~1 MB    three / r3f / 应用三个 chunk（gzip 293 KB）
-└── data/               4.8 MB   terrain.png · mask.png · data.json · world.png · world_mask.png
+├── assets/             ~1 MB    three / r3f / 应用三个 chunk（gzip 294 KB）
+└── data/               3.5 MB   terrain.webp · mask.webp · data.json · world.webp · world_mask.webp
 ```
+
+数据图是无损 WebP 而不是 PNG：同样的像素，体积小 30%（4.8 MB → 3.5 MB）。这两张图
+里 R,G 两个字节拼成 16 位高程，属于**数据**不是照片，所以只能用 lossless —— 实测有损
+压缩会让 26% 的像素在「境内/境外」判定上翻转。
 
 | 命令 | 作用 |
 |---|---|
 | `npm run build` | 数据管线 + `tsc --noEmit` + `vite build`，一条链路出站点 |
 | `npm run dev` | Vite 开发服务器（热更新） |
 | `npm run app` | 只跑 `tsc --noEmit && vite build`（数据没变时用） |
-| `npm run verify` | 产物校验（`dist/` 结构、体积、PNG 尺寸与 meta 自洽、着色器标记），CI 门禁 |
+| `npm run verify` | 产物校验（`dist/` 结构、体积、图片尺寸与 meta 自洽、着色器标记），CI 门禁 |
 | `npm run check` | 无头浏览器打开并截图，抓 pageerror / 404，校验标注零重叠 |
 | `npm run shots` | 六个状态的定标截图 |
 | `npm run cities` | 重抓地级市界（换行政区划数据时才需要） |
@@ -93,8 +97,8 @@ TerraAsia/
 |---|---|---|
 | 1 | `npm run data` | `build/data.json`：1536×1493 高度场编码成 RGBA PNG（R,G=16 位高程；B=阶梯档位／水深；A=陆地掩膜）+ 国界/省界/十段线/河流/阶梯分界折线 |
 | 2 | `npm run mask` | `build/data.split.json`：把 A 通道拆成独立灰度 PNG（否则 canvas 预乘 alpha 会清掉 A=0 像素的 RGB） |
-| 3 | `npm run publish` | `app/public/data/`：`terrain.png` / `mask.png` / `data.json`（不含图片） |
-| 4 | `npm run world` | `app/public/data/`：z4 瓦片 → 1024×1024 `world.png` / `world_mask.png` / `world.json` |
+| 3 | `npm run publish` | `app/public/data/`：`terrain.webp` / `mask.webp`（无损 WebP）/ `data.json`（不含图片） |
+| 4 | `npm run world` | `app/public/data/`：z4 瓦片 → 1024×1024 `world.webp` / `world_mask.webp` / `world.json` |
 | 5 | `npm run app` | `dist/`：`tsc --noEmit` + `vite build` |
 | — | `npm run cities` | `data/datasets/cities.json`（已入库，仅换行政区划数据时需要重跑） |
 

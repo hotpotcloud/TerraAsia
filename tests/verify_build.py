@@ -4,15 +4,18 @@
 校验的是 `dist/` 这个**静态站点**（Vite 产物），不是单文件 HTML：
     - index.html：没有内联大数据、没有未替换的占位符、能引用到 assets
     - assets/：JS 分包齐全、单包与总量在合理区间、着色器与形变入口没被摇掉
-    - data/：地形/掩膜/世界底图齐全，PNG 尺寸与 meta 自洽，JSON 里不含 base64
+    - data/：地形/掩膜/世界底图齐全，图片尺寸与 meta 自洽，JSON 里不含 base64
+
+图片一律是无损 WebP（PNG 的有损替代会毁掉 16 位高程编码，这里只能 lossless）。
 
 只做静态断言，不启动浏览器；视觉回归看 scripts/check-render.js 与 check-func.js。
 """
 import json
 import os
 import re
-import struct
 import sys
+
+from PIL import Image
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DIST = os.path.join(ROOT, "dist")
@@ -29,13 +32,16 @@ DIST_MAX_MB = 12.0
 
 # 数据文件下限：防止「文件在但是空壳」
 DATA_MIN_KB = {
-    "terrain.png": 800,
-    "mask.png": 40,
+    "terrain.webp": 1200,
+    "mask.webp": 50,
     "data.json": 300,
-    "world.png": 400,
-    "world_mask.png": 20,
+    "world.webp": 500,
+    "world_mask.webp": 30,
     "world.json": 0.1,
 }
+
+# 旧格式不许残留：PNG 与 WebP 并存时前端只会读其中一个，多出来的是死重量
+FORBIDDEN_DATA = ("terrain.png", "mask.png", "world.png", "world_mask.png")
 
 # 着色器 / 形变入口必须出现在产物 JS 里（被摇掉就等于功能没了）
 JS_MARKERS = [
@@ -47,12 +53,12 @@ JS_MARKERS = [
     ("球面过渡系数", "uGlobe"),
 ]
 
-# 期望的 PNG 尺寸（gw, gh）：亚洲高精网格与全球粗网格
-EXPECT_PNG = {
-    "terrain.png": (1536, 1493),
-    "mask.png": (1536, 1493),
-    "world.png": (1024, 1024),
-    "world_mask.png": (1024, 1024),
+# 期望的图片尺寸（gw, gh）：亚洲高精网格与全球粗网格
+EXPECT_IMG = {
+    "terrain.webp": (1536, 1493),
+    "mask.webp": (1536, 1493),
+    "world.webp": (1024, 1024),
+    "world_mask.webp": (1024, 1024),
 }
 
 EXPECT_PROVINCES = 33
@@ -67,13 +73,12 @@ def kb(path):
     return os.path.getsize(path) / 1024.0
 
 
-def png_size(path):
-    """只读 IHDR，不解码像素 —— 校验尺寸足够，也快"""
-    with open(path, "rb") as f:
-        head = f.read(24)
-    if head[:8] != b"\x89PNG\r\n\x1a\n":
-        fail("%s 不是合法 PNG" % os.path.basename(path))
-    return struct.unpack(">II", head[16:24])
+def img_size(path):
+    """只读文件头拿尺寸，不解码像素"""
+    try:
+        return Image.open(path).size
+    except Exception as e:  # noqa: BLE001
+        fail("%s 打不开（%s）" % (os.path.basename(path), e))
 
 
 def check_index():
@@ -158,17 +163,21 @@ def check_data():
             fail("data/%s 只有 %.1f KB，低于 %.1f KB 下限（可能是空壳）" % (name, size, min_kb))
         print("· data/%s %.1f KB" % (name, size))
 
-    # PNG 尺寸与 meta 自洽：错位会让地形整体偏移或拉伸
-    for name, expect in EXPECT_PNG.items():
-        got = png_size(os.path.join(DATA, name))
-        if got != expect:
+    for name in FORBIDDEN_DATA:
+        if os.path.isfile(os.path.join(DATA, name)):
+            fail("data/%s 是旧格式残留，应删掉（现在只发无损 WebP）" % name)
+
+    # 图片尺寸与 meta 自洽：错位会让地形整体偏移或拉伸
+    for name, expect in EXPECT_IMG.items():
+        got = img_size(os.path.join(DATA, name))
+        if tuple(got) != expect:
             fail("data/%s 尺寸 %dx%d，期望 %dx%d" % (name, got[0], got[1], expect[0], expect[1]))
-    print("· PNG 尺寸与预期一致 ✓")
+    print("· 图片尺寸与预期一致 ✓")
 
     with open(os.path.join(DATA, "world.json"), encoding="utf-8") as f:
         world = json.load(f)
-    if world.get("gw") != EXPECT_PNG["world.png"][0] or world.get("gh") != EXPECT_PNG["world.png"][1]:
-        fail("world.json 的 gw/gh 与 world.png 尺寸不一致")
+    if world.get("gw") != EXPECT_IMG["world.webp"][0] or world.get("gh") != EXPECT_IMG["world.webp"][1]:
+        fail("world.json 的 gw/gh 与 world.webp 尺寸不一致")
     if world.get("lon1", 0) <= world.get("lon0", 0):
         fail("world.json 经度范围非法")
     print("· world.json 与底图尺寸自洽 ✓")
@@ -184,8 +193,8 @@ def check_data():
     for k in ("lon0", "lon1", "lat0", "lat1", "gw", "gh", "min_elev", "max_elev"):
         if k not in meta:
             fail("data.json 的 meta 缺少字段 %s" % k)
-    if (meta["gw"], meta["gh"]) != EXPECT_PNG["terrain.png"]:
-        fail("data.json 的 gw/gh 与 terrain.png 尺寸不一致")
+    if (meta["gw"], meta["gh"]) != EXPECT_IMG["terrain.webp"]:
+        fail("data.json 的 gw/gh 与 terrain.webp 尺寸不一致")
 
     provs = doc.get("provinces") or []
     if len(provs) != EXPECT_PROVINCES:

@@ -120,6 +120,7 @@ body,
   to { transform: rotate(360deg); }
 }
 .loading .txt { color: #7fa6c4; font-size: 14px; letter-spacing: 0.15em; }
+.loading .txt .bytes { color: #3f6684; letter-spacing: 0.05em; }
 .loading .err { color: #ff8f7a; font-size: 13px; max-width: 60ch; line-height: 1.7; text-align: center; }
 
 /* ---------------- 面板 ---------------- */

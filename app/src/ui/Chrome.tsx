@@ -53,7 +53,15 @@ export function Foot() {
   );
 }
 
-export function LoadingScreen({ stage, error }: { stage: string; error: string | null }) {
+export function LoadingScreen({
+  stage,
+  error,
+  mb = 0,
+}: {
+  stage: string;
+  error: string | null;
+  mb?: number;
+}) {
   return (
     <div className="loading">
       {error ? (
@@ -61,7 +69,11 @@ export function LoadingScreen({ stage, error }: { stage: string; error: string |
       ) : (
         <>
           <div className="spin" />
-          <div className="txt">正在构建三维地形… {stage}</div>
+          <div className="txt">
+            正在构建三维地形… {stage}
+            {/* 只报真实已下载量：3 Mbps 上要先下 ~3 MB，有个数字才不像卡死 */}
+            {mb > 0 && <span className="bytes"> · 已下载 {mb.toFixed(1)} MB</span>}
+          </div>
         </>
       )}
     </div>

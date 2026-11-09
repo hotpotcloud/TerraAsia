@@ -162,7 +162,7 @@ jobs:
             exit 1
           fi
           # 数据与入口脚本也要能取到，否则白屏
-          for p in /data/terrain.png /data/data.json; do
+          for p in /data/terrain.webp /data/data.json; do
             c=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "http://${SSH_HOST}:${SITE_PORT}${p}" || true)
             echo "GET ${p} -> ${c}"
             [ "$c" = "200" ] || { echo "::error::${p} 取不到（${c}）"; exit 1; }

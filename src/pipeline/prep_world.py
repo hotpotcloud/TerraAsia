@@ -11,9 +11,11 @@
 编码与 prep_data 完全一致 (前端只有一套解码):
     R,G = 16 位高程 (米 + 300 偏移)
     B   = 水深 depth*255 (陆地写 0 → 前端自动落进"境外陆地"分支)
-    A   = 255 (掩膜拆到独立 PNG)
+    掩膜拆到独立 webp
 
-输出 app/public/data/world.png / world_mask.png / world.json
+输出 app/public/data/world.webp / world_mask.webp / world.json
+（无损 WebP 而非 PNG：同样的像素，体积小约 30%。有损会破坏 16 位高程编码，
+  26% 的像素会在"境内/境外"判定上翻转，所以这里必须 lossless）
 """
 import io
 import json
@@ -90,22 +92,30 @@ def main():
     depth = np.clip(-grid / 6000.0, 0.0, 1.0)
     elev_code = np.clip(np.round(grid + 300), 0, 65535).astype(np.uint16)
 
-    rgb = np.zeros((GRID, GRID, 4), dtype=np.uint8)
+    # 只要 R/G（16 位高程）与 B（水深），alpha 用不上（掩膜是单独的 world_mask）：
+    # 三通道无损 WebP 比四通道 PNG 小约 30%，是这条 3 Mbps 小水管上最直接的收益
+    rgb = np.zeros((GRID, GRID, 3), dtype=np.uint8)
     rgb[..., 0] = (elev_code >> 8) & 255
     rgb[..., 1] = elev_code & 255
     rgb[..., 2] = np.round(depth * 255).astype(np.uint8)
     rgb[..., 2][land > 0.5] = 0            # 陆地不写水深
-    rgb[..., 3] = 255
 
     buf = io.BytesIO()
-    Image.fromarray(rgb, "RGBA").save(buf, format="PNG", optimize=True)
-    with open(os.path.join(APP_DATA_DIR, "world.png"), "wb") as f:
+    Image.fromarray(rgb, "RGB").save(buf, format="WEBP", lossless=True, quality=100, method=6)
+    with open(os.path.join(APP_DATA_DIR, "world.webp"), "wb") as f:
         f.write(buf.getvalue())
 
     buf2 = io.BytesIO()
-    Image.fromarray(np.round(land * 255).astype(np.uint8), "L").save(buf2, format="PNG", optimize=True)
-    with open(os.path.join(APP_DATA_DIR, "world_mask.png"), "wb") as f:
+    Image.fromarray(np.round(land * 255).astype(np.uint8), "L").save(
+        buf2, format="WEBP", lossless=True, quality=100, method=6)
+    with open(os.path.join(APP_DATA_DIR, "world_mask.webp"), "wb") as f:
         f.write(buf2.getvalue())
+
+    # 清掉上一版的 PNG（public/ 会整目录进 dist/）
+    for legacy in ("world.png", "world_mask.png"):
+        p = os.path.join(APP_DATA_DIR, legacy)
+        if os.path.exists(p):
+            os.remove(p)
 
     meta = {
         "lon0": -180.0,
@@ -121,7 +131,7 @@ def main():
     with open(os.path.join(APP_DATA_DIR, "world.json"), "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, separators=(",", ":"))
 
-    print("world png %d KB; mask png %d KB; land %.1f%%" % (
+    print("world webp %d KB; mask webp %d KB; land %.1f%%" % (
         len(buf.getvalue()) // 1024, len(buf2.getvalue()) // 1024, land_ratio * 100))
     print("written:", APP_DATA_DIR)
 
