@@ -8,8 +8,10 @@
 #
 # 做四件事：装 nginx + rsync、建发布目录、写站点配置、启动服务。
 # 幂等：可重复执行；已存在的发布目录不会被覆盖。
-# 端口注意：这里的端口是「站点端口」（nginx 监听），SSH 端口与此无关；
-#          改了端口要同步 GitHub 仓库的 Variable `SITE_PORT`。
+# 端口注意：这里的端口是「站点端口」（nginx 监听），SSH 端口（默认 22）与此无关。
+#          默认 8159 已经写在 nginx 配置与 CI 里；真要改端口，三处一起改：
+#            deploy/nginx/terra-asia.conf 的 listen、本脚本的第二个参数、
+#            .github/workflows/build-deploy.yml 的 SITE_PORT。
 set -euo pipefail
 
 APP_DIR="${1:-/var/www/terra-asia}"
@@ -121,8 +123,8 @@ cat <<EOF
   轻量应用服务器 → 防火墙 → 放通 TCP:${APP_PORT}（站点端口）
   访问地址：http://<服务器IP>:${APP_PORT}/
 
-如果改过端口：GitHub 仓库 Settings → Variables 里把 SITE_PORT 也改成 ${APP_PORT}，
-否则 CI 冒烟检查会去戳默认端口。
+如果改过端口：记得同步 .github/workflows/build-deploy.yml 的 SITE_PORT
+与 deploy/nginx/terra-asia.conf 的 listen，否则 CI 冒烟检查会去戳默认端口。
 
 提示：本机 curl 返回 000 通常是 nginx 未启动或端口被占用；
       外网打不开但本机 200，基本就是防火墙没放通。

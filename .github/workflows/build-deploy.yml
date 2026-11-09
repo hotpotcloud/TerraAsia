@@ -84,13 +84,13 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: production
-      url: http://${{ vars.SSH_HOST || '119.29.189.103' }}:${{ vars.SITE_PORT || '8159' }}
+      url: http://${{ vars.SSH_HOST || '119.29.189.103' }}:8159
     env:
       SSH_HOST: ${{ vars.SSH_HOST || '119.29.189.103' }}
       SSH_USER: ${{ vars.SSH_USER || 'root' }}
-      # 注意：SSH_PORT 是 SSH 连接端口（连服务器用），SITE_PORT 是站点端口（nginx 监听 + 冒烟检查用）
-      SSH_PORT: ${{ vars.SSH_PORT || '22' }}
-      SITE_PORT: ${{ vars.SITE_PORT || '8159' }}
+      # 站点端口固定 8159（80 不对外）。要改端口，三处一起改：
+      #   ① 这里的 SITE_PORT ② deploy/nginx/terra-asia.conf 的 listen ③ setup-server.sh 的第二个参数
+      SITE_PORT: '8159'
       DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/var/www/terra-asia' }}
       KEEP_RELEASES: '5'
       SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
@@ -123,10 +123,11 @@ jobs:
             printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
           else
             echo "::warning::未配置 secrets.SSH_KNOWN_HOSTS，回退到 ssh-keyscan（存在中间人风险，建议补上）"
-            ssh-keyscan -p "$SSH_PORT" -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+            ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
           fi
 
-          SSH_OPTS=(-i "$HOME/.ssh/id_deploy" -p "$SSH_PORT" -o StrictHostKeyChecking=yes -o ConnectTimeout=15)
+          # SSH 走默认端口 22，所以不需要 -p；若服务器改过端口，在这里补 -p <端口>
+          SSH_OPTS=(-i "$HOME/.ssh/id_deploy" -o StrictHostKeyChecking=yes -o ConnectTimeout=15)
           TARGET="${SSH_USER}@${SSH_HOST}"
 
           ssh "${SSH_OPTS[@]}" "$TARGET" "mkdir -p '${DEPLOY_PATH}/releases'"
@@ -152,7 +153,7 @@ jobs:
           code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "http://${SSH_HOST}:${SITE_PORT}/" || true)
           echo "GET http://${SSH_HOST}:${SITE_PORT}/ -> ${code}"
           if [ "$code" != "200" ]; then
-            echo "::error::站点返回 ${code}。文件已上传，但外网访问不通，检查：① nginx 是否运行 ② 腾讯云防火墙是否放通 ${SITE_PORT} 端口 ③ deploy/setup-server.sh 是否执行过（注意它的第二个参数要跟 SITE_PORT 一致）"
+            echo "::error::站点返回 ${code}。文件已上传，但外网访问不通，检查：① nginx 是否运行 ② 腾讯云防火墙是否放通 ${SITE_PORT} 端口 ③ deploy/setup-server.sh 是否执行过"
             exit 1
           fi
           # 首页必须真的是沙盘（避免 200 但内容是默认页 / 目录列表）
