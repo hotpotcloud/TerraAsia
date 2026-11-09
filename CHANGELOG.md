@@ -4,6 +4,17 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **数据图改无损 WebP**：`terrain.webp` 1735 KB / `world.webp` 797 KB / `mask.webp` 92 KB / `world_mask.webp` 61 KB，六个数据请求合计 4428 → 3204 KB（−28%）。必须用**无损**：16 位高程编码被有损压缩翻转了 26% 的境内/境外判定
+- **首屏并发拉取**：亚洲包、世界包及其掩膜同时发出（原为串行，单是排队就占 11.6 s），并显示真实已下载字节进度
+- `terrainLoader` 拆成 `fetchFieldPack`（纯网络）/ `decodeFieldPack`（纯 CPU），网络级失败自动重试 2 次，报错带具体 URL
+
+### Fixed
+
+- **平面模式下中国东北整片发灰、无地形**：世界底图与亚洲高精层各自以**自己的图幅中心**为原点（0° vs 102.5°），球面模式靠各自的 `lon0/WX` 映射天然对位，平面模式却少了这一步平移——底图整体错位约 102°，其高海拔区从下方顶穿亚洲层。`TerrainMesh` 新增 `flatOffset`（= `asia.proj.lonLatToWorld(0,0)`），按 `1 - uGlobe` 淡入，球面时归零。`polygonOffset` 只能治共面 z-fighting，治不了真实高度差造成的穿插
+- `scripts/check-render.js` 增加两层对位断言：`layerDelta` 必须 < 1 世界单位，否则判红（回归时曾出现 `[201.41, -126.29]`）
+
 ## [0.7.0] - 2026-11-06
 
 ### Added
