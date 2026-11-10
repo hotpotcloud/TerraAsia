@@ -6,8 +6,9 @@ import {
   type LoadOptions,
 } from './data/terrainLoader';
 import { SceneView } from './scene/SceneView';
-import { Compass, Foot, Hint, LoadingScreen, TopBar } from './ui/Chrome';
+import { Compass, DerivedLegend, Foot, Hint, LoadingScreen, TopBar } from './ui/Chrome';
 import { WorkPanel } from './ui/SidePanel';
+import { DetailCard } from './ui/DetailCard';
 import { useAppStore } from './state/store';
 
 const BASE = `${import.meta.env.BASE_URL}data/`;
@@ -109,7 +110,9 @@ export default function App() {
           <div className="vignette" />
           <TopBar />
           <WorkPanel />
+          <DetailCard />
           <Compass innerRef={compassRef} />
+          <DerivedLegend />
           <Hint mode={viewMode} />
           <Foot />
         </>

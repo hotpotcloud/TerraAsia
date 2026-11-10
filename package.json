@@ -22,6 +22,7 @@
     "typecheck": "tsc --noEmit",
     "verify": "node scripts/py.js tests/verify_build.py",
     "check": "node scripts/check-render.js",
+    "check:req": "node scripts/check-req.js",
     "shots": "node scripts/capture-shots.js",
     "shot": "node scripts/shot.js",
     "deploy:setup": "bash deploy/setup-server.sh",

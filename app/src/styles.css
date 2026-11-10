@@ -282,6 +282,82 @@ input[type='range'] { flex: 1; accent-color: #38bdf8; }
 .prov-meta { font-size: 12px; color: #b7cede; line-height: 1.8; margin-top: 4px; }
 .prov-meta b { color: #e6f2fb; }
 
+/* ---------------- POI 详情卡（左上，与右侧工作面板对称） ---------------- */
+.detail {
+  top: 56px;
+  left: 12px;
+  width: 306px;
+  z-index: 10;
+  max-height: calc(100% - 96px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.dc-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 14px 8px;
+  border-bottom: 1px solid #14283e;
+}
+.dc-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dc-title h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: #eef6fc;
+  letter-spacing: 0.06em;
+}
+.dc-badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+.dc-badge.g1 { color: #ffd166; border-color: #8a6a1f; background: rgba(255, 209, 102, 0.1); }
+.dc-badge.g2 { color: #8fd0f5; border-color: #2b5a7a; background: rgba(143, 208, 245, 0.08); }
+.dc-badge.g3 { color: #9fb3c4; border-color: #33475a; background: rgba(159, 179, 196, 0.06); }
+.dc-body { padding: 10px 14px 14px; overflow-y: auto; scrollbar-width: thin; }
+.dc-meta { margin: 0; font-size: 12px; color: #b7cede; }
+.dc-row { display: flex; gap: 10px; padding: 2.5px 0; }
+.dc-row dt { flex: 0 0 40px; color: #6f8aa3; letter-spacing: 0.08em; }
+.dc-row dd { margin: 0; color: #d7e3ee; }
+.dc-row dd b { color: #ffd9a0; font-variant-numeric: tabular-nums; }
+.dc-note { font-style: normal; color: #7c98b0; margin-left: 2px; }
+.dc-coord { font-variant-numeric: tabular-nums; letter-spacing: 0.02em; }
+.dc-desc {
+  font-size: 12.5px;
+  line-height: 1.8;
+  color: #c4d6e5;
+  margin: 10px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid #14283e;
+}
+.dc-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.dc-tag {
+  font-size: 10.5px;
+  color: #9fc6e4;
+  background: rgba(20, 56, 88, 0.6);
+  border: 1px solid #1e3f5f;
+  border-radius: 4px;
+  padding: 1px 6px;
+  letter-spacing: 0.04em;
+}
+
+/* 可点标注：默认不吃指针事件，只有带 POI 资料的才接管，避免挡住相机拖动 */
+.lb-poi { pointer-events: auto; cursor: pointer; }
+.lb-poi:hover { color: #fff; text-shadow: 0 0 10px rgba(120, 200, 255, 0.9), 0 1px 2px rgba(0, 0, 0, 0.9); }
+.lb.on {
+  color: #fff !important;
+  text-shadow: 0 0 12px rgba(120, 200, 255, 0.95), 0 1px 2px rgba(0, 0, 0, 0.9);
+  outline: 1px solid rgba(120, 200, 255, 0.55);
+  outline-offset: 3px;
+  border-radius: 3px;
+}
+
 .foot {
   position: absolute;
   left: 12px;
@@ -374,8 +450,51 @@ input[type='range'] { flex: 1; accent-color: #38bdf8; }
     max-height: 45vh;
   }
   .foot { max-width: 80%; }
+  .detail { left: 8px; right: 8px; width: auto; max-height: 40vh; }
   .hint { display: none; }
   .labels-layer { inset: 0; }
   .topbar .brand { font-size: 14px; padding: 5px 9px; }
   button.tb { padding: 5px 8px; font-size: 12px; }
 }
+
+/* ---------------- 派生图图例（底部居中） ---------------- */
+.legend {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  z-index: 10;
+  background: rgba(8, 17, 28, 0.82);
+  border: 1px solid #122438;
+  border-radius: 8px;
+  padding: 7px 12px 8px;
+  font-size: 10.5px;
+  color: #9fb6c9;
+  pointer-events: none;
+}
+.lg-title { color: #9fc6e4; letter-spacing: 0.12em; margin-bottom: 5px; }
+.lg-stops { display: flex; gap: 10px; }
+.lg-stop { display: flex; align-items: center; gap: 4px; font-variant-numeric: tabular-nums; }
+.lg-stop i { width: 11px; height: 11px; border-radius: 2px; display: block; }
+.lg-ramp { width: 220px; height: 10px; border-radius: 2px; }
+.lg-axis {
+  display: flex;
+  justify-content: space-between;
+  width: 220px;
+  margin-top: 2px;
+  color: #6f8aa3;
+  font-size: 9.5px;
+}
+.lg-contour { display: flex; gap: 14px; align-items: center; }
+.lg-contour span { display: flex; align-items: center; gap: 6px; }
+.lg-contour i { display: block; width: 26px; background: #b9cede; border-radius: 1px; }
+.lg-contour i.thin { height: 1px; }
+.lg-contour i.thick { height: 2.5px; }
+
+/* 户外决策的模式切换：四个等宽按钮 */
+.dc-seg button { flex: 1; padding: 5px 0; font-size: 12px; }
+
+@media (max-width: 900px) {
+  .legend { display: none; }
+}
+.lg-foot { margin-top: 4px; color: #6f8aa3; font-size: 9.5px; }

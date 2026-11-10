@@ -18,6 +18,7 @@ import {
 } from '../data/static';
 import { useScene } from './SceneContext';
 import { useAppStore, type LabelGroupKey } from '../state/store';
+import { POI_BY_NAME } from '../data/poi';
 import { viewState } from './viewState';
 
 interface Item {
@@ -76,12 +77,14 @@ const PRIO_FAR: Record<string, number> = {
 
 const PRIO_NEAR: Record<string, number> = {
   c1: 0,
-  cc: 1,
   p: 2,
   s: 3,
   t: 4,
   i: 4,
   l: 4,
+  /* 市名只在 lod 3 出现，此时视野里通常只有二三十个市，不会再互相挤。
+     排在自然要素之后：山峰与景区先占位，市名填空隙。 */
+  cc: 4,
   w: 5,
   m: 6,
   r: 7,
@@ -137,8 +140,8 @@ export function LabelLayer({ host }: { host: HTMLDivElement }) {
   const pack = data.asia;
   const { scene, camera, size } = useThree();
   const exag = useAppStore((s) => s.exag);
-  const selected = useAppStore((s) => s.selected);
   const labelGroups = useAppStore((s) => s.labelGroups);
+  const poi = useAppStore((s) => s.poi);
   const layers = useAppStore((s) => s.layers);
 
   const groupsRef = useRef(labelGroups);
@@ -174,6 +177,18 @@ export function LabelLayer({ host }: { host: HTMLDivElement }) {
       const obj = new CSS2DObject(el);
       const w = pack.proj.lonLatToWorld(r.lon, r.lat);
       obj.position.set(w[0], 0, w[1]);
+      /* 有结构化资料的标注才可点：加 pointer-events 与点击回调。
+         没有 POI 记录的标注保持不可交互，免得点上去什么都不发生。 */
+      const poi = POI_BY_NAME.get(r.name);
+      if (poi) {
+        el.dataset.poi = poi.name;
+        el.classList.add('lb-poi');
+        el.title = '点击查看详情';
+        el.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          useAppStore.getState().openPoi(poi);
+        });
+      }
       const isWater = r.type === 'w' || r.type === 'i';
       const lod = LOD_OF[r.type] ?? 0;
       list.push({
@@ -195,36 +210,54 @@ export function LabelLayer({ host }: { host: HTMLDivElement }) {
     return list;
   }, [raw, pack]);
 
-  /* ---------- 点选省份后的地级市名 ---------- */
+  /* ---------- 地级市名：随「地级市界」图层出现，不再依赖选中省份 ----------
+     门槛放在 lod 3（最近一档，camDist ≤ 34）：省域视角（lod 2）一屏能同时
+     装下 250 个市名，字挤字、把山峰与景区全压掉；再近一档时视野里通常只有
+     二三十个市，名字才真正起定位作用。市界本身不受影响，lod 1 起就可见。
+
+     446 个市名对象常驻构建，实际显隐交给每帧的 LOD + 屏幕避让。
+     这里刻意不把 layers.cityDiv 放进依赖：一旦随开关重建，`all` 的引用会变，
+     场景里 700 多个 CSS2DObject 会被整体拆掉重建，切一次开关就卡一下。
+     显隐放到 useFrame 里按 group === 'cc' + 图层开关判断，重建成本归零。 */
   const cityItems = useMemo<Item[]>(() => {
-    if (!selected || !pack.json?.cities) return [];
-    const rows = pack.json.cities[selected.name];
-    if (!rows) return [];
-    return rows.map((row) => {
-      const el = document.createElement('div');
-      el.className = 'lb lb-cc';
-      el.textContent = row[0];
-      const obj = new CSS2DObject(el);
-      const w = pack.proj.lonLatToWorld(row[1], row[2]);
-      obj.position.set(w[0], 0, w[1]);
-      return {
-        obj,
-        el,
-        x: w[0],
-        z: w[1],
-        y: 0,
-        off: 0.46,
-        group: 'cc',
-        lod: 1,
-        w: row[0].length * 11.5 * 0.92,
-        h: 15,
-        type: 'cc',
-        nudge: 0,
-      };
-    });
-  }, [selected, pack]);
+    if (!pack.json?.cities) return [];
+    const out: Item[] = [];
+    for (const rows of Object.values(pack.json.cities)) {
+      for (const row of rows) {
+        const el = document.createElement('div');
+        el.className = 'lb lb-cc';
+        el.textContent = row[0];
+        const obj = new CSS2DObject(el);
+        const w = pack.proj.lonLatToWorld(row[1], row[2]);
+        obj.position.set(w[0], 0, w[1]);
+        out.push({
+          obj,
+          el,
+          x: w[0],
+          z: w[1],
+          y: 0,
+          off: 0.46,
+          group: 'cc',
+          lod: 3,
+          w: row[0].length * 11.5 * 0.92,
+          h: 15,
+          type: 'cc',
+          nudge: 0,
+        });
+      }
+    }
+    return out;
+  }, [pack]);
 
   const all = useMemo(() => [...items, ...cityItems], [items, cityItems]);
+
+  /* 选中 POI 的标注高亮：只改 class，不动 DOM 结构，避免 CSS2DRenderer 丢引用 */
+  useEffect(() => {
+    for (const it of all) {
+      const on = !!poi && it.el.dataset.poi === poi.name;
+      if (on !== it.el.classList.contains('on')) it.el.classList.toggle('on', on);
+    }
+  }, [poi, all]);
 
   /**
    * 两套顺序在构建时就排好，运行时只按 lod 选一套 —— 顺序稳定，重叠结果才不会逐帧闪。
@@ -330,8 +363,9 @@ export function LabelLayer({ host }: { host: HTMLDivElement }) {
       // 2) 语义可见
       let want = revealed && lod >= it.lod;
       if (want) {
-        want =
-          it.group === 'cc' ? layers.cityDiv && lod >= 1 : vis[it.group as LabelGroupKey] !== false;
+        /* cc 不是标注分组键，单独判：市名跟着「地级市界」图层开关走，
+           LOD 门槛已由 it.lod 统一处理。 */
+        want = it.group === 'cc' ? layers.cityDiv : vis[it.group as LabelGroupKey] !== false;
       }
       if (want && spherical) {
         const p = it.obj.position;

@@ -5,7 +5,9 @@ import { indexProvinces } from '../data/geo';
 import { useFrame } from '@react-three/fiber';
 import { useScene } from './SceneContext';
 import { useAppStore } from '../state/store';
+import { viewState } from './viewState';
 import { drapedLine, drapedSegments } from './layers/polyline';
+import type { Ring } from '../data/types';
 
 const PROV_BASE = 0x7f9bb0;
 const PROV_SEL = 0xffa64d;
@@ -100,21 +102,27 @@ export function VectorLayers() {
     return { mesh, list };
   }, [json.markers, pack]);
 
-  /* ---------- 地级市界：点选省份后按需构建 ---------- */
+  /* ---------- 地级市界：全量构建，一次 draw call ----------
+     旧实现要 selected 才构建，等于「点了省份才有城市划分」。现在全量构建：
+     446 个市级单元 / 约 4.5 万点，贴地后约 9 万顶点，一个 BufferGeometry 装得下。
+     不按省拆对象：市界只需要一种颜色，拆开反而多几百个 draw call。 */
   const cityGeo = useMemo(() => {
-    if (!selected || !json.cities) return null;
-    const rows = json.cities[selected.name];
-    if (!rows || !rows.length) return null;
-    const rings = rows.flatMap((row) => row[3] ?? []);
+    if (!json.cities) return null;
+    const rings: Ring[] = [];
+    for (const rows of Object.values(json.cities)) {
+      for (const row of rows) {
+        for (const ring of row[3] ?? []) if (ring.length > 1) rings.push(ring);
+      }
+    }
     if (!rings.length) return null;
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(drapedSegments(rings, pack, exag, 0.36), 3));
     g.computeBoundingSphere();
     return g;
-  }, [selected, json.cities, pack, exag]);
+  }, [json.cities, pack, exag]);
 
   const cityMat = useMemo(
-    () => injectGlobe(new THREE.LineBasicMaterial({ color: CITY_COLOR, transparent: true, opacity: 0.78 }), glsl, 'globe-asia'),
+    () => injectGlobe(new THREE.LineBasicMaterial({ color: CITY_COLOR, transparent: true, opacity: 0.62 }), glsl, 'globe-asia'),
     [glsl],
   );
 
@@ -149,6 +157,16 @@ export function VectorLayers() {
     }
     handles.selTex.needsUpdate = true;
   }, [selected, provObjs, handles, pack]);
+
+  /* ---------- 市界密度跟随视距 ----------
+     446 个市级单元的边界在远景会糊成一层灰网，把省界与地形都盖住。
+     远处压到 0.20（只作「省内被切开」的暗示），近处拉到 0.74（能看清每个市域轮廓）。 */
+  useFrame(() => {
+    const lod = viewState.lod;
+    const want = lod >= 3 ? 0.82 : lod >= 2 ? 0.68 : lod >= 1 ? 0.42 : 0.22;
+    const m = cityMat as THREE.LineBasicMaterial;
+    if (Math.abs(m.opacity - want) > 0.004) m.opacity = want;
+  });
 
   /* ---------- 岛礁在球面过渡时重定位 ----------
      InstancedMesh 的矩阵在顶点形变之后生效，不能靠着色器注入，只能 CPU 搬 */

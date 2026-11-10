@@ -127,6 +127,12 @@ export interface TerrainMaterialOpts {
   v0: number;
   /** 全球底图：不投射阴影、不做图幅边缘渐隐 */
   isWorld?: boolean;
+  /** 高度纹理单像素对应 [1/GW, 1/GH]，坡度差分要用 */
+  texel: [number, number];
+  /** 墨卡托换算常数 [ch/P, (cy0+tyOff)/P]，用于从 vUv 反算纬度 */
+  merc: [number, number];
+  /** 单像素对应的经度差（度），用于把「米/像素」算出来 */
+  lonStep: number;
 }
 
 export interface TerrainMaterialResult {
@@ -135,7 +141,7 @@ export interface TerrainMaterialResult {
 }
 
 export function createTerrainMaterial(opts: TerrainMaterialOpts): TerrainMaterialResult {
-  const { glsl, v0, isWorld } = opts;
+  const { glsl, v0, isWorld, texel, merc, lonStep } = opts;
 
   const uniforms: Record<string, THREE.IUniform> = {
     uTime: { value: 0 },
@@ -153,6 +159,12 @@ export function createTerrainMaterial(opts: TerrainMaterialOpts): TerrainMateria
     /* 1 = 图幅边缘渐隐到背景（全球底图）；0 = 不渐隐（亚洲 patch 要无缝压在世界底图上） */
     uEdgeMode: { value: isWorld ? 1 : 0 },
     uGlobe: { value: 0 }, // 由外面替换成共享对象 GLOBE_U
+    /* 户外决策派生图：0 自然 / 1 坡度 / 2 坡向 / 3 加密等高线 */
+    uDerived: { value: 0 },
+    uTexel: { value: new THREE.Vector2(texel[0], texel[1]) },
+    uMerc: { value: new THREE.Vector2(merc[0], merc[1]) },
+    uLonStep: { value: lonStep },
+    uPxScale: { value: 0.001 }, // 由 TerrainMesh 按相机 fov 与视口高度写入
   };
 
   const material = new THREE.ShaderMaterial({
@@ -193,6 +205,9 @@ export function createTerrainMaterial(opts: TerrainMaterialOpts): TerrainMateria
       uniform float uTime; uniform vec3 uDim; uniform vec3 uBg;
       uniform vec3 uSun;
       uniform float uShadowOn; uniform float uAOAmt; uniform float uExag; uniform float uSelAmt; uniform float uEdgeMode;
+      uniform float uDerived; uniform vec2 uTexel; uniform vec2 uMerc; uniform float uLonStep;
+      /** 一个屏幕像素对应多少世界单位（= 2·tan(fov/2) / 视口高度） */
+      uniform float uPxScale;
       uniform sampler2D uSel; uniform sampler2D uAO; uniform sampler2D uHeight;
       varying vec3 vColor; varying vec3 vNormal; varying vec3 vPos;
       varying float vTier; varying float vW; varying float vK; varying vec2 vUv; varying float vElev; varying float vEdge;
@@ -200,6 +215,12 @@ export function createTerrainMaterial(opts: TerrainMaterialOpts): TerrainMateria
 
       const float V0_ = ${v0};
       const float STEP_ = ${STEP_WORLD};
+
+      /* 方位角 → 色环。坡向图用 HSV 直接铺色，比手写六段渐变短且没有接缝 */
+      vec3 hsv2rgb(vec3 c){
+        vec3 p = abs(fract(c.xxx + vec3(0.0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - 3.0);
+        return c.z * mix(vec3(1.0), clamp(p - 1.0, 0.0, 1.0), c.y);
+      }
 
       float terrainH(vec2 g){
         if(g.x < 0.0 || g.x > 1.0 || g.y < 0.0 || g.y > 1.0) return -1.0;
@@ -319,6 +340,75 @@ export function createTerrainMaterial(opts: TerrainMaterialOpts): TerrainMateria
           wcol += vec3(0.55, 0.68, 0.78) * foam * 0.32 * detail;
           wcol *= mix(0.80, 1.0, ao);
           col = mix(col, wcol, isWater);
+        }
+
+        /* ---- 户外决策派生图：坡度 / 坡向 / 加密等高线 ----
+           全部由高度纹理差分实时算，不新增任何数据文件。
+           关键：坡度用「真实水平距离」，不是屏幕斜率 —— 后者随垂直夸张变化，
+           把滑块从 3× 拉到 12× 读数会翻四倍，没有可用性。
+
+           墨卡托是等角投影，同一纬度上 x/y 两向的「米/像素」相同，所以只需
+           算一个 mPerTexel；但它随 cos(lat) 变化，必须逐片元反算纬度，
+           否则青藏高原（30°N）与东北（48°N）的坡度会被系统性低估。 */
+        float slopeDeg = 0.0;
+        float aspectDeg = 0.0;
+        if(uDerived > 0.5 && isWater < 0.5){
+          float hE = texture2D(uHeight, clamp(g + vec2(uTexel.x, 0.0), vec2(0.0), vec2(1.0))).r;
+          float hW = texture2D(uHeight, clamp(g - vec2(uTexel.x, 0.0), vec2(0.0), vec2(1.0))).r;
+          float hN = texture2D(uHeight, clamp(g + vec2(0.0, -uTexel.y), vec2(0.0), vec2(1.0))).r;
+          float hS = texture2D(uHeight, clamp(g + vec2(0.0,  uTexel.y), vec2(0.0), vec2(1.0))).r;
+          /* vUv.y = 1 - gy/(GH-1)，墨卡托 y 与 gy 线性相关：
+             pyAbs/P = g.y * uMerc.x + uMerc.y，再反解纬度 */
+          float latRad = atan(sinh(3.14159265 * (1.0 - 2.0 * (g.y * uMerc.x + uMerc.y))));
+          float mPerTexel = max(uLonStep * 111320.0 * cos(latRad), 1.0);
+          float gE = (hE - hW) * 0.5 / mPerTexel;
+          float gN = (hN - hS) * 0.5 / mPerTexel;
+          slopeDeg = degrees(atan(length(vec2(gE, gN))));
+          /* 下坡方向的方位角：梯度指向最高处，取反即下坡；x=东、y=北，北为 0° 顺时针 */
+          aspectDeg = degrees(atan(-gE, -gN));
+          if(aspectDeg < 0.0) aspectDeg += 360.0;
+        }
+
+        if(uDerived > 0.5 && isWater < 0.5){
+          /* 派生图仍要读得出地形起伏：保留太阳明暗，把色相完全交给主题。
+             明暗幅度必须够大 —— 压到 0.84~1.06 时整张专题图会「平掉」，
+             山脊和谷地看不出差别，看着像一张色卡而不是地形。 */
+          float shade = clamp(skyL * 0.60 + ndl * 0.95 * sh, 0.05, 1.15);
+          vec3 theme;
+          if(uDerived < 1.5){
+            /* 坡度分级必须按这张网格的实际分布来定，不能照搬步道口径。
+               11 km 网格上实测：中位 0.3°、p90 1.4°、p99 3.2°、最大 7.8°——
+               照 0–45° 那套分级，整个亚洲都会落在最浅一档，图等于没做。
+               这里用 0.5 / 1 / 2 / 4 / 6 度分档，图例同时给出对应的 m/km。 */
+            theme = vec3(0.15, 0.38, 0.32);
+            theme = mix(theme, vec3(0.27, 0.55, 0.34), smoothstep(0.4, 0.7, slopeDeg));
+            theme = mix(theme, vec3(0.72, 0.76, 0.36), smoothstep(0.9, 1.3, slopeDeg));
+            theme = mix(theme, vec3(0.88, 0.58, 0.24), smoothstep(1.8, 2.4, slopeDeg));
+            theme = mix(theme, vec3(0.82, 0.29, 0.22), smoothstep(3.6, 4.6, slopeDeg));
+            theme = mix(theme, vec3(0.58, 0.15, 0.36), smoothstep(5.8, 7.4, slopeDeg));
+          } else if(uDerived < 2.5){
+            theme = hsv2rgb(vec3(aspectDeg / 360.0, 0.52, 0.86));
+            /* 近水平面上「下坡方向」是数值噪声，去饱和成灰，避免平原花掉。
+               阈值同样按实测压到 1° 以内，否则大片缓坡全被涂灰。 */
+            theme = mix(vec3(0.48, 0.53, 0.58), theme, smoothstep(0.2, 0.9, slopeDeg));
+          } else {
+            /* 等高线：保留分层设色，叠 500 m 细线 + 1000 m 粗线。
+               线宽必须按屏幕像素反推 —— 固定用「高程分数带宽」时，
+               远景一条线不到 1 像素、看不清；近景又糊成一片粗带。
+               这里先算 1 像素对应多少米高程（垂直方向），再把线宽定成约 1.5 像素。
+               等高距取 500 m 而不取 100 m：这张网格约 11 km/格，常见视距下
+               1 像素已对应 40–70 m 高程，100 m 的线在远景根本分辨不出来。 */
+            float dist = distance(cameraPosition, vPos);
+            float mPerPx = dist * uPxScale / max(uExag * V0_, 1e-6);
+            float bandM = clamp(0.85 * mPerPx, 4.0, 90.0);
+            float fp5 = fract(vElev / 500.0);
+            float l500 = 1.0 - smoothstep(0.0, bandM, min(fp5, 1.0 - fp5) * 500.0);
+            float fp10 = fract(vElev / 1000.0);
+            float l1000 = 1.0 - smoothstep(0.0, bandM * 1.5, min(fp10, 1.0 - fp10) * 1000.0);
+            theme = col * (1.0 - 0.34 * l500 - 0.34 * l1000);
+            shade = 1.0;
+          }
+          col = theme * mix(0.52, 1.22, clamp(shade, 0.0, 1.0)) * mix(0.84, 1.0, ao);
         }
 
         // ---- 地球模式：晨昏线。球面靠法线与太阳夹角分昼夜 ----

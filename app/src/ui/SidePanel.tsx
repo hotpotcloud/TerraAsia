@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { STEPS } from '../data/tour';
 import { PROV_CAPITAL, TIER_NAME } from '../data/static';
-import { useAppStore, type LabelGroupKey, type LayerKey } from '../state/store';
+import { useAppStore, type DerivedMode, type LabelGroupKey, type LayerKey } from '../state/store';
 
 /* ---------- 基础控件 ---------- */
 function Check({
@@ -92,20 +92,24 @@ const LABEL_KEYS: [LabelGroupKey, string][] = [
   ['nf', '境外山河'],
 ];
 
+/** 地形派生显示：把同一份高程换成户外决策要读的口径 */
+const DERIVED_MODES: [DerivedMode, string][] = [
+  ['none', '自然'],
+  ['slope', '坡度'],
+  ['aspect', '坡向'],
+  ['contour', '等高线'],
+];
+
 function LayersPanel() {
   const s = useAppStore();
   return (
     <>
       <Group title="行政区划">
-        {ADMIN_LAYERS.map(([k, label]) => {
-          const cityDivHint = k === 'cityDiv' && !s.selected;
-          return (
-            <Check key={k} checked={s.layers[k]} onChange={(v) => s.setLayer(k, v)}>
-              {label}
-              {cityDivHint ? <em className="hint-inline">选中省份后可查看</em> : ''}
-            </Check>
-          );
-        })}
+        {ADMIN_LAYERS.map(([k, label]) => (
+          <Check key={k} checked={s.layers[k]} onChange={(v) => s.setLayer(k, v)}>
+            {label}
+          </Check>
+        ))}
       </Group>
       <Group title="自然地理">
         {NATURE_LAYERS.map(([k, label]) => (
@@ -113,6 +117,29 @@ function LayersPanel() {
             {label}
           </Check>
         ))}
+      </Group>
+      <Group title="户外决策（地形派生）" defaultOpen={false}>
+        <div className="seg dc-seg">
+          {DERIVED_MODES.map(([k, label]) => (
+            <button
+              key={k}
+              className={`b ${s.derived === k ? 'on' : ''}`}
+              onClick={() => s.setDerived(k)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <p className="note">
+          {s.derived === 'slope'
+            ? '按 10 km 基线的真实水平距离计算。这张网格上平原多在 0.5° 以下、横断山与喜马拉雅可达 4–7°，读数属区域尺度。'
+            : s.derived === 'aspect'
+              ? '颜色表示下坡方向（北为 0° 顺时针），接近水平的地面呈灰色。'
+              : s.derived === 'contour'
+                ? '细线 500 m、粗线 1000 m。线越密坡越陡；线宽按屏幕像素补偿，远近都看得清。'
+                : '把同一份高程换成坡度、坡向或加密等高线来读。'}
+        </p>
+        <p className="note">单条步道的局部陡缓仍需更高精度高程，本层只用于区域判断。</p>
       </Group>
       <Group title="交通" defaultOpen={false}>
         {TRANSIT_LAYERS.map(([k, label]) => (

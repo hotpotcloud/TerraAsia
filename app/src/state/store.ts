@@ -1,7 +1,17 @@
 import { create } from 'zustand';
 import { DEFAULT_EXAG } from '../data/projection';
+import type { Poi } from '../data/poi';
 
 export type ViewMode = 'flat' | 'globe';
+
+/**
+ * 地形派生显示模式（户外决策用）。
+ *   none   —— 自然分层设色
+ *   slope  —— 坡度分级（真实水平距离，非屏幕像素）
+ *   aspect —— 坡向方位（下坡方向，按罗盘配色）
+ *   contour—— 加密等高线（100 m 间隔）
+ */
+export type DerivedMode = 'none' | 'slope' | 'aspect' | 'contour';
 
 /** 工作面板：一次只处理一类任务。null = 面板关闭。 */
 export type PanelKind = 'layers' | 'view' | 'tour' | 'province';
@@ -43,6 +53,15 @@ interface AppState {
   layers: Record<LayerKey, boolean>;
   labelGroups: Record<LabelGroupKey, boolean>;
 
+  /** 地形派生显示：坡度 / 坡向 / 等高线，null 语义交给 'none' */
+  derived: DerivedMode;
+
+  /** 当前打开的 POI 详情卡；null = 关闭 */
+  poi: Poi | null;
+  /** 最近一次「定位到」的坐标，focusKey 自增让场景侧感知重复点击 */
+  focus: { lon: number; lat: number } | null;
+  focusKey: number;
+
   selected: ProvinceInfo | null;
   step: number;
   autoTour: boolean;
@@ -71,6 +90,12 @@ interface AppState {
   setLayer(key: LayerKey, on: boolean): void;
   toggleLabelGroup(key: LabelGroupKey): void;
   setLabelGroup(key: LabelGroupKey, on: boolean): void;
+
+  setDerived(mode: DerivedMode): void;
+  /** 打开 POI 详情；传 null 关闭 */
+  openPoi(poi: Poi | null): void;
+  /** 把镜头定位到某个坐标（POI 详情卡的「定位」按钮） */
+  focusOn(lon: number, lat: number): void;
 
   select(info: ProvinceInfo | null): void;
   setStep(step: number): void;
@@ -107,7 +132,10 @@ export const useAppStore = create<AppState>((set) => ({
   layers: {
     coast: true,
     prov: false,
-    cityDiv: false,
+    /* 地级市界默认可见：用户反馈「城市划分没有」——旧实现要选中省份才构建，
+       等于把地级市这一层藏在了两级菜单后面。市界全量构建（446 个单元、
+       约 4.5 万点）成本可控，默认打开才能一眼看出省内的城市格局。 */
+    cityDiv: true,
     dash: true,
     tierLine: false,
     river: true,
@@ -117,6 +145,11 @@ export const useAppStore = create<AppState>((set) => ({
   // m 山脉 t 地形区 r 河流水体 c 城市 n 国家名 nf 境外山河 s 山峰景区
   // x=阶梯分界标注（默认关） rl/rd=线路名（默认关，随图层开）
   labelGroups: { m: true, t: true, r: true, c: true, n: true, nf: true, s: true, x: false, rl: false, rd: false },
+
+  derived: 'none',
+  poi: null,
+  focus: null,
+  focusKey: 0,
 
   selected: null,
   step: 0,
@@ -142,6 +175,10 @@ export const useAppStore = create<AppState>((set) => ({
   setLayer: (key, on) => set((s) => ({ layers: { ...s.layers, [key]: on } })),
   toggleLabelGroup: (key) => set((s) => ({ labelGroups: { ...s.labelGroups, [key]: !s.labelGroups[key] } })),
   setLabelGroup: (key, on) => set((s) => ({ labelGroups: { ...s.labelGroups, [key]: on } })),
+
+  setDerived: (derived) => set({ derived }),
+  openPoi: (poi) => set({ poi }),
+  focusOn: (lon, lat) => set((s) => ({ focus: { lon, lat }, focusKey: s.focusKey + 1 })),
 
   select: (selected) =>
     set((s) => ({

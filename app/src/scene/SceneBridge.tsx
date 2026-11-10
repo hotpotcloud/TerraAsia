@@ -73,6 +73,8 @@ export function SceneBridge({
   const replayKey = useAppStore((s) => s.replayKey);
   const flyKey = useAppStore((s) => s.flyKey);
   const flyKind = useAppStore((s) => s.flyKind);
+  const focus = useAppStore((s) => s.focus);
+  const focusKey = useAppStore((s) => s.focusKey);
   const select = useAppStore((s) => s.select);
 
   const provinces = useRef(indexProvinces(pack.json!.provinces));
@@ -134,6 +136,15 @@ export function SceneBridge({
     else flyTo(shotAt(pack, exag, useAppStore.getState().step), 1800);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [flyKey]);
+
+  /* POI 详情卡的「定位到这里」：拉到要素上方一个固定视距。
+     dist 取 26（约省域尺度），比导览机位更近 —— 点到「贡嘎山」就该看见那条山脊，
+     而不是退回全省。球面模式下同样适用：camAt 用的世界坐标在球面上会跟着卷。 */
+  useEffect(() => {
+    if (focusKey === 0 || !focus) return;
+    flyTo(camAt(pack, exag, focus.lon, focus.lat, 26, 0.5, 34), 1400);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusKey]);
 
   /* ---------- 视图模式 ---------- */
   const prevSun = useRef(FLAT_SUN);

@@ -108,8 +108,7 @@ export function Compass({ innerRef }: { innerRef: React.MutableRefObject<HTMLDiv
   );
 }
 
-export function Hint({ mode }: { mode: string }) {
-  return (
+export function Hint({ mode }: { mode: string }) {  return (
     <div className="hint">
       {mode === 'globe'
         ? '左键拖动转动星球 · 滚轮缩放 · 点击国家或省份'
@@ -138,5 +137,77 @@ export function Foot() {
         <b>中国以外地区的国界并未绘制</b>，仅以地形与国名示意；正式发布须替换为带审图号（如 GS(2024)0650）的标准地图数据并履行送审程序。
       </div>
     </details>
+  );
+}
+
+/** 坡度分级色带：与片元着色器的阈值逐条对应，改一边必须改另一边 */
+const SLOPE_STOPS: [string, string][] = [
+  ['#266151', '<0.5°'],
+  ['#458c57', '0.5–1°'],
+  ['#b8c25c', '1–2°'],
+  ['#e0943d', '2–4°'],
+  ['#d14a38', '4–6°'],
+  ['#94265c', '6°+'],
+];
+
+/** 坡向色环：北→东→南→西→北（下坡方向，北为 0° 顺时针） */
+const ASPECT_GRADIENT =
+  'linear-gradient(90deg,#ff5a5a,#ffe45a,#5aff8c,#5ae4ff,#5a7bff,#ff5ae4,#ff5a5a)';
+
+/**
+ * 派生图图例。
+ *
+ * 没有图例的专题图等于没做：色块不标阈值，用户只能看出「有深有浅」，
+ * 读不出「这段坡大概多少度」。图例贴在底部居中，不占左右面板的位置。
+ */
+export function DerivedLegend() {
+  const derived = useAppStore((s) => s.derived);
+  if (derived === 'none') return null;
+
+  return (
+    <div className="legend" aria-label="图例">
+      {derived === 'slope' && (
+        <>
+          <div className="lg-title">区域坡度 · 10 km 基线</div>
+          <div className="lg-stops">
+            {SLOPE_STOPS.map(([c, t]) => (
+              <span key={t} className="lg-stop">
+                <i style={{ background: c }} />
+                {t}
+              </span>
+            ))}
+          </div>
+          <div className="lg-foot">1° ≈ 每公里升降 17 m</div>
+        </>
+      )}
+      {derived === 'aspect' && (
+        <>
+          <div className="lg-title">下坡坡向</div>
+          <div className="lg-ramp" style={{ background: ASPECT_GRADIENT }} />
+          <div className="lg-axis">
+            <span>北</span>
+            <span>东</span>
+            <span>南</span>
+            <span>西</span>
+            <span>北</span>
+          </div>
+        </>
+      )}
+      {derived === 'contour' && (
+        <>
+          <div className="lg-title">等高线</div>
+          <div className="lg-contour">
+            <span>
+              <i className="thin" />
+              500 m
+            </span>
+            <span>
+              <i className="thick" />
+              1000 m
+            </span>
+          </div>
+        </>
+      )}
+    </div>
   );
 }

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
-import { useFrame } from '@react-three/fiber';
+import { useFrame, useThree } from '@react-three/fiber';
 import { GLOBE_U, globeGLSL } from '../data/globe';
 import type { FieldPack } from '../data/terrainLoader';
 import type { Mapping } from '../data/globe';
@@ -32,6 +32,7 @@ interface Props {
 export function TerrainMesh({ pack, mapping, world = false, flatOffset, overlayBounds }: Props) {
   const { handles } = useScene();
   const exag = useAppStore((s) => s.exag);
+  const derived = useAppStore((s) => s.derived);
   const meshRef = useRef<THREE.Mesh>(null);
 
   const built = useMemo(() => {
@@ -41,6 +42,11 @@ export function TerrainMesh({ pack, mapping, world = false, flatOffset, overlayB
       glsl: globeGLSL(mapping),
       v0: pack.proj.V0,
       isWorld: world,
+      texel: [1 / pack.GW, 1 / pack.GH],
+      /* 坡度要按真实米数算：mPerTexel = 经度步长 × 111320 × cos(lat)，
+         而纬度由墨卡托反解，这两个常数就是反解需要的比例项。 */
+      merc: [mapping.ch / mapping.P, (mapping.cy0 + mapping.tyOff) / mapping.P],
+      lonStep: (mapping.lon1 - mapping.lon0) / (pack.GW - 1),
     });
     // 所有人共用同一个 uGlobe 对象，一次改值全体同步
     uniforms.uGlobe = GLOBE_U;
@@ -82,6 +88,22 @@ export function TerrainMesh({ pack, mapping, world = false, flatOffset, overlayB
     built.setExag(exag);
     built.uniforms.uExag.value = exag;
   }, [exag, built]);
+
+  /* 派生图只作用在亚洲高精 patch 上：全球底图是 ~39 km 网格，差分出来的坡度
+     只反映大陆尺度趋势，把它也切成色块只会让人误读。底图保持自然设色。 */
+  useEffect(() => {
+    const v = derived === 'slope' ? 1 : derived === 'aspect' ? 2 : derived === 'contour' ? 3 : 0;
+    built.uniforms.uDerived.value = world ? 0 : v;
+  }, [derived, built, world]);
+
+  /* 等高线线宽要按「一个像素 = 多少米高程」换算，这里给着色器提供像素尺度。
+     fov 在 Canvas 里固定 50°，视口高度随窗口变化，所以两个都要读。 */
+  const { size, camera } = useThree();
+  useEffect(() => {
+    const fov = (camera as THREE.PerspectiveCamera).fov ?? 50;
+    const k = (2 * Math.tan((fov * Math.PI) / 360)) / Math.max(1, size.height);
+    built.uniforms.uPxScale.value = k;
+  }, [built, size.height, camera]);
 
   // 平面模式的对齐偏移：球面模式必须为 0（球面靠各层自己的 lon0/WX 映射对位）
   useFrame(() => {
