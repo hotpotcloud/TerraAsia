@@ -110,21 +110,36 @@ async function decodeImage(blob: Blob, GW: number, GH: number, what: string): Pr
   return data;
 }
 
-/** 高程场轻度平滑：抑制采样噪声在垂直夸张下产生的「碎面」 */
+/** 高程场轻度平滑：抑制采样噪声在垂直夸张下产生的「碎面」。
+ *  多遍 3×3 高斯（含对角）——横断山等 z6 网格 + 8.5× 夸张下，相邻格高差可达
+ *  数百米，几何表面每个格就是一个「疙瘩」，放大近景呈现密集坑洼/麻面。单次
+ *  4 邻域抹不掉，这里用多遍含对角的核把高频格点噪声磨平，保留山脊走向。 */
 function smoothField(src: Float32Array, GW: number, GH: number): Float32Array {
   const N = GW * GH;
   const tmp = new Float32Array(N);
   const out = new Float32Array(N);
-  for (let j = 0; j < GH; j++) {
-    for (let i = 0; i < GW; i++) {
-      const n = j * GW + i;
-      tmp[n] = src[n] * 0.5 + (src[i > 0 ? n - 1 : n] + src[i < GW - 1 ? n + 1 : n]) * 0.25;
-    }
-  }
-  for (let j = 0; j < GH; j++) {
-    for (let i = 0; i < GW; i++) {
-      const n = j * GW + i;
-      out[n] = tmp[n] * 0.5 + (tmp[j > 0 ? n - GW : n] + tmp[j < GH - 1 ? n + GW : n]) * 0.25;
+  const PASSES = 2;
+  for (let pass = 0; pass < PASSES; pass++) {
+    const cur = pass === 0 ? src : out;
+    const dst = pass === 0 ? out : tmp;
+    for (let j = 0; j < GH; j++) {
+      for (let i = 0; i < GW; i++) {
+        const n = j * GW + i;
+        let sum = cur[n] * 4;
+        let c = 4;
+        for (let dj = -1; dj <= 1; dj++) {
+          for (let di = -1; di <= 1; di++) {
+            if (di === 0 && dj === 0) continue;
+            const ni = i + di;
+            const nj = j + dj;
+            if (ni < 0 || ni >= GW || nj < 0 || nj >= GH) continue;
+            const w = di !== 0 && dj !== 0 ? 0.5 : 1;
+            sum += cur[nj * GW + ni] * w;
+            c += w;
+          }
+        }
+        dst[n] = sum / c;
+      }
     }
   }
   return out;
@@ -276,17 +291,21 @@ export async function decodeFieldPack(raw: RawPack, onStage?: (stage: string) =>
   }
   {
     const es = smoothField(elevW, GW, GH);
-    // 平滑强度要与垂直夸张配套：磨太少 + 拉太高，高原边缘会出现锯齿「城墙」
-    for (let n = 0; n < N; n++) if (elevW[n] !== 0) elevW[n] = es[n] * 0.64 + elevW[n] * 0.36;
+    // 平滑强度要与垂直夸张配套：磨太少 + 拉太高，高原边缘会出现锯齿「城墙」；
+    // 磨太多又会把真实山脊磨秃。0.64→0.80：横断山的格点高频噪声比想象中强，
+    // 只取 64% 平滑值时坑洼麻面仍在，提到 80% 才能把「疙瘩」磨成连续坡面。
+    for (let n = 0; n < N; n++) if (elevW[n] !== 0) elevW[n] = es[n] * 0.80 + elevW[n] * 0.20;
   }
 
   report('计算天空遮蔽');
   const aoTex = buildAO(elevW, proj);
 
   // 高度纹理：供着色器做太阳方向的自遮挡步进；单位米（未夸张），由 uExag 换算
+  // 必须用双线性：最近邻会让 sunShadow 每一步采到离散像素的跳变高程，高海拔山地
+  // 放大后形成密集的「花斑/麻面」明暗突变（坑洼感）。双线性把步进路径平滑化。
   const heightTex = new THREE.DataTexture(elevW, GW, GH, THREE.RedFormat, THREE.FloatType);
-  heightTex.minFilter = THREE.NearestFilter;
-  heightTex.magFilter = THREE.NearestFilter;
+  heightTex.minFilter = THREE.LinearFilter;
+  heightTex.magFilter = THREE.LinearFilter;
   heightTex.needsUpdate = true;
 
   const sampleHeight = (x: number, z: number): number => {

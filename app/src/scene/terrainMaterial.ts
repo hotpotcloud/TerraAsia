@@ -146,7 +146,7 @@ export function createTerrainMaterial(opts: TerrainMaterialOpts): TerrainMateria
     uSun: { value: sun.dir },
     uShadowOn: { value: isWorld ? 0 : 1 },
     uAOAmt: { value: 1 },
-    uExag: { value: 8.5 },
+    uExag: { value: 5 },
     uAO: { value: null },
     uHeight: { value: null },
     uBg: { value: new THREE.Vector3(...BG_LIN) },
@@ -215,7 +215,10 @@ export function createTerrainMaterial(opts: TerrainMaterialOpts): TerrainMateria
           if(d < minD) minD = d;
           if(minD < 0.0) break;                // 已被挡住，后面的采样没意义
         }
-        return smoothstep(0.0, 0.30, minD);
+        /* 半影要拉得够宽：上限太小时，山地微小的坑洼也被判成硬阴影，
+           放大近景出现「花斑/麻面」明暗突变。0.30 → 0.85，把坑洼淡化成
+           柔和的坡向过渡，只保留真正的山脊大阴影。 */
+        return smoothstep(0.0, 0.85, minD);
       }
 
       void main(){
@@ -269,7 +272,9 @@ export function createTerrainMaterial(opts: TerrainMaterialOpts): TerrainMateria
         vec3 Lfill = normalize(vec3(-Lw.x, 0.55, -Lw.z));
         float fill = max(dot(n, Lfill), 0.0) * 0.09;
         vec3 col = base * (skyL * 0.66 + ndl * 1.08 * sh + fill);
-        col *= mix(0.72, 1.0, ao);
+        /* AO 最深处压到 0.80 而非 0.72：沟谷过暗会让山地整体发灰发脏、显「坑洼」，
+           稍抬一点保底亮度，保留遮蔽层次的同时不至于糊成灰黑。 */
+        col *= mix(0.80, 1.0, ao);
         col *= (1.0 - slope * 0.20);
         // 高海拔按坡度分雪与岩：陡壁挂不住雪，露出深色岩体，山体才有「重量」
         float high = smoothstep(4600.0, 5600.0, vElev);

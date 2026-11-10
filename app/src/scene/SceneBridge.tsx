@@ -391,6 +391,7 @@ export function SceneBridge({
       view: (m: 'flat' | 'globe') => useAppStore.getState().setViewMode(m),
       step: (i: number) => useAppStore.getState().setStep(i),
       sun: (az: number, el: number) => useAppStore.getState().setSun(az, el),
+      exag: (v: number) => useAppStore.getState().setExag(v),
       /** 屏幕归一化坐标（-1..1）处拾取，用于标定与回归脚本 */
       pick: (nx = 0, ny = 0) => pickRef.current?.(nx, ny) ?? null,
       /** 按经纬度读装载后的数值场，用于排查「某片区域没显示」这类数据/解码问题 */

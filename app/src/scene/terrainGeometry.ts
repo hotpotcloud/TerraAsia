@@ -68,7 +68,10 @@ export function buildTerrainGeometry(pack: FieldPack, exag: number, isWorld: boo
   geometry.computeVertexNormals();
 
   /* 法线平滑：陡崖处相邻三角形法线的水平分量会左右翻转，直接光照会渲染成
-     一排明暗相间的竖条纹（「城墙鳍片」）。两次邻域平均可消除，且不影响大尺度坡向。 */
+     一排明暗相间的竖条纹（「城墙鳍片」）。这里用 8 邻域（含对角）+ 中心高权重
+     做多次平均：横断山脉等 z6 网格 + 8.5× 夸张下，相邻格高差可达数百米，法线在
+     每个格上剧烈抖动，光照下就是密集的「花斑/麻面」——只有把邻域半径和迭代次数
+     都提上去，才能把高频法线噪声压平，而大尺度坡向（山脊走向）不受影响。 */
   const smoothNormals = (passes: number) => {
     const attr = geometry.getAttribute('normal') as THREE.BufferAttribute;
     const nrm = attr.array as Float32Array;
@@ -77,14 +80,26 @@ export function buildTerrainGeometry(pack: FieldPack, exag: number, isWorld: boo
       for (let j = 0; j < GH; j++) {
         for (let i = 0; i < GW; i++) {
           const n = (j * GW + i) * 3;
-          let x = nrm[n];
-          let y = nrm[n + 1];
-          let z = nrm[n + 2];
-          let c = 1;
-          if (i > 0) { x += nrm[n - 3]; y += nrm[n - 2]; z += nrm[n - 1]; c++; }
-          if (i < GW - 1) { x += nrm[n + 3]; y += nrm[n + 4]; z += nrm[n + 5]; c++; }
-          if (j > 0) { const m = n - GW * 3; x += nrm[m]; y += nrm[m + 1]; z += nrm[m + 2]; c++; }
-          if (j < GH - 1) { const m = n + GW * 3; x += nrm[m]; y += nrm[m + 1]; z += nrm[m + 2]; c++; }
+          // 中心权重 4：让平滑收敛到邻域平均，而不是把法线糊成一团
+          let x = nrm[n] * 4;
+          let y = nrm[n + 1] * 4;
+          let z = nrm[n + 2] * 4;
+          let c = 4;
+          for (let dj = -1; dj <= 1; dj++) {
+            for (let di = -1; di <= 1; di++) {
+              if (di === 0 && dj === 0) continue;
+              const ni = i + di;
+              const nj = j + dj;
+              if (ni < 0 || ni >= GW || nj < 0 || nj >= GH) continue;
+              const m = (nj * GW + ni) * 3;
+              // 对角距离更远，权重减半
+              const w = di !== 0 && dj !== 0 ? 0.5 : 1;
+              x += nrm[m] * w;
+              y += nrm[m + 1] * w;
+              z += nrm[m + 2] * w;
+              c += w;
+            }
+          }
           const L = Math.hypot(x, y, z) || 1;
           tmp[n] = x / L;
           tmp[n + 1] = y / L;
@@ -95,14 +110,14 @@ export function buildTerrainGeometry(pack: FieldPack, exag: number, isWorld: boo
     }
     attr.needsUpdate = true;
   };
-  smoothNormals(2);
+  smoothNormals(3);
 
   const setExag = (ex: number) => {
     const arr = geometry.getAttribute('position').array as Float32Array;
     for (let n = 0; n < N; n++) arr[n * 3 + 1] = pack.elevW[n] * ex * proj.V0;
     geometry.getAttribute('position').needsUpdate = true;
     geometry.computeVertexNormals();
-    smoothNormals(2);
+    smoothNormals(3);
     geometry.computeBoundingSphere();
   };
 

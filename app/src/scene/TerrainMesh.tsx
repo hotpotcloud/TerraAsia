@@ -70,9 +70,13 @@ export function TerrainMesh({ pack, mapping, world = false, flatOffset }: Props)
     };
   }, [built.uniforms, handles, world]);
 
-  // 垂直夸张变化 → 重算 Y 与法线（不重建几何）
+  // 垂直夸张变化 → 重算 Y 与法线（不重建几何），并同步片元着色器的 uExag。
+  // uExag 只在材质里给过初值 8.5，从不跟随 store 更新——阴影步进 sunShadow 用
+  // 它按 8.5× 算高度场射线，一旦默认夸张改成 5×，射线高度会被系统性高估 70%，
+  // 阴影方向会错。这里必须和几何的 setExag 一起同步。
   useEffect(() => {
     built.setExag(exag);
+    built.uniforms.uExag.value = exag;
   }, [exag, built]);
 
   // 平面模式的对齐偏移：球面模式必须为 0（球面靠各层自己的 lon0/WX 映射对位）
