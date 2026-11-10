@@ -6,8 +6,8 @@ import {
   type LoadOptions,
 } from './data/terrainLoader';
 import { SceneView } from './scene/SceneView';
-import { Compass, Foot, Hint, LoadingScreen, SideToggle, TitleCard } from './ui/Chrome';
-import { SidePanel } from './ui/SidePanel';
+import { Compass, Foot, Hint, LoadingScreen, TopBar } from './ui/Chrome';
+import { WorkPanel } from './ui/SidePanel';
 import { useAppStore } from './state/store';
 
 const BASE = `${import.meta.env.BASE_URL}data/`;
@@ -44,7 +44,7 @@ export default function App() {
   const error = useAppStore((s) => s.error);
   const setStage = useAppStore((s) => s.setStage);
   const setError = useAppStore((s) => s.setError);
-  const sideOpen = useAppStore((s) => s.sideOpen);
+  const activePanel = useAppStore((s) => s.activePanel);
   const viewMode = useAppStore((s) => s.viewMode);
   const compassRef = useRef<HTMLDivElement | null>(null);
 
@@ -97,7 +97,7 @@ export default function App() {
   }, [setStage, setError]);
 
   return (
-    <div className={`app ${sideOpen ? '' : 'nopanel'}`}>
+    <div className={`app ${activePanel ? '' : 'nopanel'}`}>
       {packs ? (
         <SceneView asia={packs.asia} world={packs.world} compassRef={compassRef} />
       ) : (
@@ -107,9 +107,8 @@ export default function App() {
       {packs && (
         <>
           <div className="vignette" />
-          <TitleCard />
-          <SideToggle />
-          {sideOpen && <SidePanel />}
+          <TopBar />
+          <WorkPanel />
           <Compass innerRef={compassRef} />
           <Hint mode={viewMode} />
           <Foot />

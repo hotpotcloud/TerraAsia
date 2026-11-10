@@ -48,7 +48,13 @@ const { serveDist, LAUNCH } = require('./lib/serve');
     }, text);
 
   // 1) 打开省界并点选青海（点画布正中 = 机位对准的经纬度）
-  out.provToggle = await clickLabel('省级行政区界');
+  // 先打开图层面板（新 UI 面板默认关闭，需通过顶栏工具入口打开）
+  await page.evaluate(() => {
+    const tb = [...document.querySelectorAll('button.tb')].find((b) => b.textContent.trim() === '图层');
+    tb && tb.click();
+  });
+  await page.waitForTimeout(300);
+  out.provToggle = await clickLabel('省界');
   await page.evaluate(() => window.__ta.camAt(100.5, 35.4, 42, 0.5, 40));
   // 拾取走的是相机矩阵，等一帧让它落到新机位（camAt 已同步刷新，这里只是兜底）
   await page.waitForTimeout(500);
@@ -69,16 +75,27 @@ const { serveDist, LAUNCH } = require('./lib/serve');
   await waitMix(0);
   out.flatMix = await page.evaluate(() => window.__ta.info().mix);
 
-  // 3) 图层开关
-  for (const t of ['铁路干线', '公路干线', '阶梯分界线', '河流（流动光效）']) await clickLabel(t);
+  // 3) 图层开关（先切到图层面板，交通/自然地理分组可能折叠，展开后点选）
+  await page.evaluate(() => {
+    // 打开图层面板
+    const tb = [...document.querySelectorAll('button.tb')].find((b) => b.textContent.trim() === '图层');
+    tb && tb.click();
+  });
+  await page.waitForTimeout(300);
+  for (const t of ['铁路', '公路', '阶梯分界', '河流']) await clickLabel(t);
   await page.waitForTimeout(400);
 
-  // 4) 夸张滑块拉满（重建几何 + 重算法线）
+  // 4) 夸张滑块拉满（重建几何 + 重算法线）—— 需先切到画面面板
+  await page.evaluate(() => {
+    const tb = [...document.querySelectorAll('button.tb')].find((b) => b.textContent.trim() === '画面');
+    tb && tb.click();
+  });
+  await page.waitForTimeout(300);
   // 注意：受控 input 直接赋 .value 会被 React 的 value tracker 吞掉（认为值没变 →
   // 不触发 onChange）。必须走 HTMLInputElement.prototype 上的原生 setter 再派发 input。
   const exagSet = await page.evaluate(() => {
     const row = [...document.querySelectorAll('.ctl')].find(
-      (el) => el.querySelector('label')?.textContent.trim() === '立体感',
+      (el) => el.querySelector('label')?.textContent.trim() === '地形起伏',
     );
     const s = row && row.querySelector('input[type=range]');
     if (!s) return null;
@@ -92,7 +109,12 @@ const { serveDist, LAUNCH } = require('./lib/serve');
   out.exag = await page.evaluate(() => window.__ta.info().exag);
   await page.waitForTimeout(1200);
 
-  // 5) 导览步进
+  // 5) 导览步进（切到导览面板）
+  await page.evaluate(() => {
+    const tb = [...document.querySelectorAll('button.tb')].find((b) => b.textContent.trim() === '导览');
+    tb && tb.click();
+  });
+  await page.waitForTimeout(300);
   await page.evaluate(() => window.__ta.step(2));
   await page.waitForFunction('document.querySelector(".step-name")?.textContent.includes("3 / 6")', {
     timeout: 15000,

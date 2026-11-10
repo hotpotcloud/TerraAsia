@@ -253,7 +253,11 @@ export function SceneBridge({
       const dx = e.clientX - down[0];
       const dy = e.clientY - down[1];
       down = null;
-      if (dx * dx + dy * dy > 36) return; // 拖拽旋转不算点击
+      if (dx * dx + dy * dy > 36) {
+        // 拖拽旋转 = 用户主动操作，暂停自动导览，避免镜头被自动推进抢回
+        if (useAppStore.getState().autoTour) useAppStore.getState().setAutoTour(false);
+        return;
+      }
 
       const r = dom.getBoundingClientRect();
       const hit = pickAt(

@@ -3,6 +3,9 @@ import { DEFAULT_EXAG } from '../data/projection';
 
 export type ViewMode = 'flat' | 'globe';
 
+/** 工作面板：一次只处理一类任务。null = 面板关闭。 */
+export type PanelKind = 'layers' | 'view' | 'tour' | 'province';
+
 export type LayerKey =
   | 'coast'
   | 'prov'
@@ -49,7 +52,10 @@ interface AppState {
   /** 视角快捷键（亚洲全景 / 聚焦中国 / 当前导览），自增 key 让场景侧感知重复点击 */
   flyKind: 'asia' | 'cn' | 'step';
   flyKey: number;
-  sideOpen: boolean;
+  /** 当前打开的工作面板；null = 关闭。替代旧的 sideOpen 布尔。 */
+  activePanel: PanelKind | null;
+  /** 进入省份详情前所在的面板，返回时恢复 */
+  prevPanel: PanelKind | null;
 
   setPhase(phase: AppState['phase'], stage?: string): void;
   setStage(stage: string): void;
@@ -72,7 +78,14 @@ interface AppState {
   setAutoRotate(on: boolean): void;
   replay(): void;
   fly(kind: 'asia' | 'cn' | 'step'): void;
-  setSideOpen(open: boolean): void;
+  /** 打开/切换工作面板；再点同一入口则关闭 */
+  openPanel(kind: PanelKind): void;
+  /** 关闭面板（不取消省份选择、不关图层、不停导览） */
+  closePanel(): void;
+  /** 打开省份详情，记录当前面板以便返回 */
+  openProvince(): void;
+  /** 从省份详情返回之前的面板 */
+  backFromProvince(): void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -112,7 +125,8 @@ export const useAppStore = create<AppState>((set) => ({
   replayKey: 0,
   flyKind: 'step',
   flyKey: 0,
-  sideOpen: true,
+  activePanel: null,
+  prevPanel: null,
 
   setPhase: (phase, stage) => set((s) => ({ phase, stage: stage ?? s.stage })),
   setStage: (stage) => set({ stage }),
@@ -129,11 +143,23 @@ export const useAppStore = create<AppState>((set) => ({
   toggleLabelGroup: (key) => set((s) => ({ labelGroups: { ...s.labelGroups, [key]: !s.labelGroups[key] } })),
   setLabelGroup: (key, on) => set((s) => ({ labelGroups: { ...s.labelGroups, [key]: on } })),
 
-  select: (selected) => set({ selected }),
+  select: (selected) =>
+    set((s) => ({
+      selected,
+      // 自动导览中主动点选省份，先暂停导览再显示详情
+      autoTour: selected ? false : s.autoTour,
+      // 点选省份时自动切到省份详情面板（记录当前面板以便返回）；取消选择则返回原面板
+      ...(selected
+        ? { prevPanel: s.activePanel, activePanel: 'province' as PanelKind }
+        : { activePanel: s.prevPanel ?? s.activePanel, prevPanel: null }),
+    })),
   setStep: (step) => set({ step }),
   setAutoTour: (autoTour) => set({ autoTour }),
   setAutoRotate: (autoRotate) => set({ autoRotate }),
   replay: () => set((s) => ({ replayKey: s.replayKey + 1, step: 0 })),
   fly: (flyKind) => set((s) => ({ flyKind, flyKey: s.flyKey + 1 })),
-  setSideOpen: (sideOpen) => set({ sideOpen }),
+  openPanel: (kind) => set((s) => ({ activePanel: s.activePanel === kind ? null : kind })),
+  closePanel: () => set({ activePanel: null }),
+  openProvince: () => set((s) => ({ prevPanel: s.activePanel, activePanel: 'province' })),
+  backFromProvince: () => set((s) => ({ activePanel: s.prevPanel ?? null, prevPanel: null })),
 }));
