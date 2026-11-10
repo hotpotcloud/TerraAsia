@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { V0, createProjection, type Projection } from './projection';
+import { V0, DEFAULT_EXAG, createProjection, type Projection } from './projection';
 import type { Meta, TerrainJSON } from './types';
 import { smoothstep } from './projection';
 
@@ -164,15 +164,19 @@ function smoothField(src: Float32Array, GW: number, GH: number): Float32Array {
 /**
  * 天空遮蔽（AO）预计算。
  * 与太阳方位无关，只取决于「四周地形挡住多少天空」，所以加载时算一次即可。
- * 全分辨率逐点投射太慢，按 1/4 分辨率采样，着色器里双线性上采样。
+ * 按 1/2 分辨率采样（原 1/4），着色器里双线性上采样——1/4 分辨率每 4×4 像素
+ * 共享一个遮蔽值，放大近景时相邻块遮蔽跳变会形成肉眼可见的「方形色块/花斑」；
+ * 1/2 把块边长减半，配合双线性基本消除块状伪影。
  */
-function buildAO(elevW: Float32Array, proj: Projection): THREE.DataTexture {
+function buildAO(elevW: Float32Array, proj: Projection, refExag: number): THREE.DataTexture {
   const { GW, GH, WX } = proj;
-  const DIV = 4;
+  const DIV = 2;
   const AOW = Math.ceil(GW / DIV);
   const AOH = Math.ceil(GH / DIV);
   const data = new Uint8Array(AOW * AOH);
-  const REF_EX = 8.5;
+  /* AO 的地平线仰角必须按「渲染时的实际夸张比」算，否则遮蔽强度系统性错：
+     之前硬编码 8.5，而默认夸张已降到 5，AO 会把沟谷压得过暗、色块对比过强。 */
+  const REF_EX = refExag;
   const pxW = WX / (GW - 1);
   const STEPS = 26;
   const DIRS = 8;
@@ -316,7 +320,7 @@ export async function decodeFieldPack(raw: RawPack, onStage?: (stage: string) =>
   }
 
   report('计算天空遮蔽');
-  const aoTex = buildAO(elevW, proj);
+  const aoTex = buildAO(elevW, proj, DEFAULT_EXAG);
 
   // 高度纹理：供着色器做太阳方向的自遮挡步进；单位米（未夸张），由 uExag 换算
   // 必须用双线性：最近邻会让 sunShadow 每一步采到离散像素的跳变高程，高海拔山地

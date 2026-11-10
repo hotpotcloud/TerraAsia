@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { lerp, smoothstep } from '../data/projection';
+import { lerp, smoothstep, DEFAULT_EXAG } from '../data/projection';
 import type { Mapping } from '../data/globe';
 import type { FieldPack } from '../data/terrainLoader';
 
@@ -146,7 +146,7 @@ export function createTerrainMaterial(opts: TerrainMaterialOpts): TerrainMateria
     uSun: { value: sun.dir },
     uShadowOn: { value: isWorld ? 0 : 1 },
     uAOAmt: { value: 1 },
-    uExag: { value: 5 },
+    uExag: { value: DEFAULT_EXAG },
     uAO: { value: null },
     uHeight: { value: null },
     uBg: { value: new THREE.Vector3(...BG_LIN) },

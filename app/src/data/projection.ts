@@ -11,6 +11,10 @@ export const U_PER_DEG = 1.965;
 /** 1 米海拔在 1× 夸张下的世界高度 */
 export const V0 = 0.00012;
 
+/** 默认垂直夸张比。AO 预计算、材质 uniform 初值、store 初始值三处共用，
+ *  避免 AO 的遮蔽强度与几何夸张脱节（曾硬编码 8.5，改默认后 AO 系统性偏强）。 */
+export const DEFAULT_EXAG = 5;
+
 export interface Projection {
   GW: number;
   GH: number;

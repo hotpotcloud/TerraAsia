@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { DEFAULT_EXAG } from '../data/projection';
 
 export type ViewMode = 'flat' | 'globe';
 
@@ -84,7 +85,7 @@ export const useAppStore = create<AppState>((set) => ({
      可达数百米，8.5× 把这些真实起伏放大成密集的「疙瘩/坑洼麻面」，近景尤其
      明显、像渲染坏了一样。降到 5× 仍能清晰展示中国三级阶梯（分层设色不受夸张
      影响），但把格点级高频起伏压回自然的坡面，用户仍可用滑块在 1–16× 间调整。 */
-  exag: 5,
+  exag: DEFAULT_EXAG,
   sunAz: 315,
   sunEl: 40,
   shadow: true,
