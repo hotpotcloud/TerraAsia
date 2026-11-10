@@ -123,6 +123,33 @@ body,
 .loading .txt .bytes { color: #3f6684; letter-spacing: 0.05em; }
 .loading .err { color: #ff8f7a; font-size: 13px; max-width: 60ch; line-height: 1.7; text-align: center; }
 
+/* 下载进度条：窄条 + 百分比，让用户知道还差多少 */
+.loading .bar {
+  position: relative;
+  width: 320px;
+  height: 6px;
+  background: #14304a;
+  border-radius: 999px;
+  overflow: hidden;
+}
+.loading .bar .fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  height: 100%;
+  background: linear-gradient(90deg, #0ea5e9, #38bdf8);
+  border-radius: 999px;
+  transition: width 0.25s ease-out;
+}
+.loading .bar .pct {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: #38bdf8;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+}
+
 /* ---------------- 面板 ---------------- */
 .panel {
   position: absolute;

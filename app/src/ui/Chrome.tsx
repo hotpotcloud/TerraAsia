@@ -57,10 +57,12 @@ export function LoadingScreen({
   stage,
   error,
   mb = 0,
+  pct = 0,
 }: {
   stage: string;
   error: string | null;
   mb?: number;
+  pct?: number;
 }) {
   return (
     <div className="loading">
@@ -71,9 +73,15 @@ export function LoadingScreen({
           <div className="spin" />
           <div className="txt">
             正在构建三维地形… {stage}
-            {/* 只报真实已下载量：3 Mbps 上要先下 ~3 MB，有个数字才不像卡死 */}
-            {mb > 0 && <span className="bytes"> · 已下载 {mb.toFixed(1)} MB</span>}
+            {mb > 0 && <span className="bytes"> · {mb.toFixed(1)} MB</span>}
           </div>
+          {/* 下载进度条：分母来自各文件 Content-Length 之和，分子是真实已下载字节 */}
+          {pct > 0 && (
+            <div className="bar" aria-label={`已加载 ${pct}%`}>
+              <div className="fill" style={{ width: `${pct}%` }} />
+              <span className="pct">{pct}%</span>
+            </div>
+          )}
         </>
       )}
     </div>

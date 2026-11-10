@@ -52,11 +52,15 @@ async function fetchBlob(
   url: string,
   what: string,
   onChunk?: (delta: number) => void,
+  onTotal?: (total: number) => void,
 ): Promise<Blob> {
   for (let attempt = 0; attempt <= RETRIES; attempt++) {
     try {
       const res = await fetch(url);
       if (!res.ok) throw new Error(`${what}加载失败 ${url} (HTTP ${res.status})`);
+      // 从响应头拿真实字节数（gzip 后的传输大小），作为进度条的分母
+      const cl = res.headers.get('content-length');
+      if (cl && onTotal) onTotal(parseInt(cl, 10) || 0);
       // 拿不到流（或不需要进度）就直接 blob()
       if (!onChunk || !res.body) return await res.blob();
 
@@ -77,11 +81,23 @@ async function fetchBlob(
   throw new Error(netHint(url));
 }
 
-async function fetchJson<T>(url: string, what: string): Promise<T> {
+async function fetchJson<T>(
+  url: string,
+  what: string,
+  onTotal?: (total: number) => void,
+  onBytes?: (delta: number) => void,
+): Promise<T> {
   for (let attempt = 0; attempt <= RETRIES; attempt++) {
     try {
       const res = await fetch(url);
       if (!res.ok) throw new Error(`${what}加载失败 ${url} (HTTP ${res.status})`);
+      const cl = res.headers.get('content-length');
+      if (cl && onTotal) onTotal(parseInt(cl, 10) || 0);
+      if (onBytes) {
+        const buf = await res.arrayBuffer();
+        onBytes(buf.byteLength);
+        return JSON.parse(new TextDecoder().decode(buf)) as T;
+      }
       return (await res.json()) as T;
     } catch (e) {
       if (!isNetError(e)) throw e;
@@ -206,8 +222,10 @@ export interface LoadOptions {
   pngUrl: string;
   maskUrl: string;
   onStage?: (stage: string) => void;
-  /** 已下载字节数的增量（用于加载页显示真实进度，不估算百分比） */
+  /** 已下载字节数的增量（用于加载页显示真实进度） */
   onBytes?: (delta: number) => void;
+  /** 某文件响应头 Content-Length 报告的总字节数（进度条分母，累加） */
+  onTotal?: (total: number) => void;
 }
 
 /** 只下载、不解码：网络阶段。两个包可以先并行拉，再按顺序解码 */
@@ -225,13 +243,13 @@ export interface RawPack {
 export async function fetchFieldPack(opts: LoadOptions): Promise<RawPack> {
   const metaReq = (async () => {
     const url = opts.jsonUrl ?? opts.metaUrl!;
-    return await fetchJson<Meta | TerrainJSON>(url, '数据索引');
+    return await fetchJson<Meta | TerrainJSON>(url, '数据索引', opts.onTotal, opts.onBytes);
   })();
 
   const [doc, png, mask] = await Promise.all([
     metaReq,
-    fetchBlob(opts.pngUrl, '地形纹理', opts.onBytes),
-    fetchBlob(opts.maskUrl, '陆地掩膜', opts.onBytes),
+    fetchBlob(opts.pngUrl, '地形纹理', opts.onBytes, opts.onTotal),
+    fetchBlob(opts.maskUrl, '陆地掩膜', opts.onBytes, opts.onTotal),
   ]);
 
   if (opts.jsonUrl) {
