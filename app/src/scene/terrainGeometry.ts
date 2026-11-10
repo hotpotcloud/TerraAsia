@@ -11,7 +11,25 @@ export interface TerrainGeometryResult {
   setExag(ex: number): void;
 }
 
-export function buildTerrainGeometry(pack: FieldPack, exag: number, isWorld: boolean): TerrainGeometryResult {
+/**
+ * 精细层的覆盖范围（经纬度）。全球粗底图在该范围内让位给精细层，
+ * 避免两套分辨率不同的高程网格共面穿插（放大近景会呈现「泡状孤岛 + 灰斑沟谷」）。
+ */
+export interface OverlayBounds {
+  lon0: number;
+  lon1: number;
+  lat0: number;
+  lat1: number;
+  /** 让位区内缩（度）：留一圈粗底图垫在精细层边缘下方，避免边界空洞 */
+  inset?: number;
+}
+
+export function buildTerrainGeometry(
+  pack: FieldPack,
+  exag: number,
+  isWorld: boolean,
+  overlay?: OverlayBounds,
+): TerrainGeometryResult {
   const { GW, GH } = pack;
   const proj = pack.proj;
   const N = GW * GH;
@@ -22,6 +40,9 @@ export function buildTerrainGeometry(pack: FieldPack, exag: number, isWorld: boo
   const aW = new Float32Array(N);
   const aLon = new Float32Array(N);
   const aElev = new Float32Array(N);
+  /** 仅全球底图使用：1 = 落在精细层覆盖区内，本层应让位（片元 discard） */
+  const aOverlay = new Float32Array(N);
+  const inset = overlay?.inset ?? 0.5;
   const { color, edge } = buildVertexColors(pack);
 
   for (let j = 0; j < GH; j++) {
@@ -36,6 +57,13 @@ export function buildTerrainGeometry(pack: FieldPack, exag: number, isWorld: boo
       // 全球底图不参与「自东向西点亮」的开场动画，直接给满
       aLon[n] = isWorld ? 1 : i / (GW - 1);
       aElev[n] = pack.elev[n];
+      if (isWorld && overlay) {
+        // 用底图自己的网格反解经纬度，与精细层矩形比较；内缩一圈留作边界过渡。
+        const [lon, lat] = proj.gridToLonLat(i, j);
+        aOverlay[n] =
+          lon >= overlay.lon0 + inset && lon <= overlay.lon1 - inset &&
+          lat >= overlay.lat0 + inset && lat <= overlay.lat1 - inset ? 1 : 0;
+      }
       uv[n * 2] = i / (GW - 1);
       uv[n * 2 + 1] = 1 - j / (GH - 1);
     }
@@ -62,6 +90,7 @@ export function buildTerrainGeometry(pack: FieldPack, exag: number, isWorld: boo
   geometry.setAttribute('aLon', new THREE.BufferAttribute(aLon, 1));
   geometry.setAttribute('aElev', new THREE.BufferAttribute(aElev, 1));
   geometry.setAttribute('aEdge', new THREE.BufferAttribute(edge, 1));
+  geometry.setAttribute('aOverlay', new THREE.BufferAttribute(aOverlay, 1));
   geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
   geometry.setIndex(new THREE.BufferAttribute(idx, 1));
 

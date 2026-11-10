@@ -165,9 +165,12 @@ export function createTerrainMaterial(opts: TerrainMaterialOpts): TerrainMateria
       attribute float aLon;
       attribute float aElev;
       attribute float aEdge;
+      /* 精细层覆盖区标记：全球底图在这些片元上让位，避免两套高程网格穿插 */
+      attribute float aOverlay;
       uniform float uReveal;
       varying vec3 vColor; varying vec3 vNormal; varying vec3 vPos;
       varying float vTier; varying float vW; varying float vK; varying vec2 vUv; varying float vElev; varying float vEdge;
+      varying float vOverlay;
       void main(){
         vec3 p = position;
         float k = clamp((uReveal * 1.3 - (1.0 - aLon)) / 0.3, 0.0, 1.0);
@@ -179,6 +182,7 @@ export function createTerrainMaterial(opts: TerrainMaterialOpts): TerrainMateria
         vec3 ng = normalize(e * nf.x + r * nf.y + s * nf.z);
         vec3 gp = mix(p, globePos(p), uGlobe);
         vColor = color; vTier = aTier; vW = aW; vK = k; vUv = uv; vElev = aElev; vEdge = aEdge;
+        vOverlay = aOverlay;
         vNormal = normalize(mix(nf, ng, uGlobe));
         vPos = gp;
         gl_Position = projectionMatrix * modelViewMatrix * vec4(gp, 1.0);
@@ -192,6 +196,7 @@ export function createTerrainMaterial(opts: TerrainMaterialOpts): TerrainMateria
       uniform sampler2D uSel; uniform sampler2D uAO; uniform sampler2D uHeight;
       varying vec3 vColor; varying vec3 vNormal; varying vec3 vPos;
       varying float vTier; varying float vW; varying float vK; varying vec2 vUv; varying float vElev; varying float vEdge;
+      varying float vOverlay;
 
       const float V0_ = ${v0};
       const float STEP_ = ${STEP_WORLD};
@@ -222,6 +227,13 @@ export function createTerrainMaterial(opts: TerrainMaterialOpts): TerrainMateria
       }
 
       void main(){
+        /* 覆盖区地表归属：精细层负责的区域里全球粗底图不写入颜色与深度。
+           两层网格分辨率不同（亚洲 ~0.10°/格、全球 ~0.35°/格），粗网格会抹平
+           沟谷，在沟谷处高于精细层、山脊处低于精细层 —— 共面时深度归属逐像素
+           翻转，放大近景就呈现「泡状孤岛 + 灰色平面沟谷」。
+           polygonOffset 只能偏移深度，不能改变这个几何事实；必须由覆盖规则解决。
+           aOverlay 按经纬度计算，与平面/球面变形无关，两种视图模式一致生效。 */
+        if(vOverlay > 0.5) discard;
         vec2 g = vec2(vUv.x, 1.0 - vUv.y);
         vec3 n = normalize(vNormal);
         vec3 V = normalize(cameraPosition - vPos);

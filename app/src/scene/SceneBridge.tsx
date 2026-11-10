@@ -415,6 +415,38 @@ export function SceneBridge({
           depth: +pack.depth[n].toFixed(3),
         };
       },
+      /**
+       * 两层在同一经纬度的实际数值与几何高度（docs/07 第四节第 3 步要求）。
+       * 只读已装载的数值场，不依赖画面猜测；y 是顶点实际写入的世界坐标高度。
+       */
+      probeLayers: (lon: number, lat: number) => {
+        const sample = (p: typeof pack) => {
+          const [gx, gy] = p.proj.lonLatToGrid(lon, lat);
+          const i = Math.round(gx);
+          const j = Math.round(gy);
+          if (i < 0 || j < 0 || i >= p.GW || j >= p.GH) return null;
+          const n = j * p.GW + i;
+          const [lo, la] = p.proj.gridToLonLat(gx, gy);
+          return {
+            grid: [i, j],
+            lonlat: [+lo.toFixed(3), +la.toFixed(3)],
+            elev: +p.elev[n].toFixed(1),
+            elevW: +p.elevW[n].toFixed(1),
+            y: +(p.elevW[n] * exag * p.proj.V0).toFixed(4),
+            size: [p.GW, p.GH],
+          };
+        };
+        const a = sample(pack);
+        const w = sample(data.world);
+        return {
+          asia: a,
+          world: w,
+          dy: a && w ? +(a.y - w.y).toFixed(4) : null,
+          inOverlay:
+            lon >= pack.proj.lon0 && lon <= pack.proj.lon1 &&
+            lat >= pack.proj.lat0 && lat <= pack.proj.lat1,
+        };
+      },
       cam: () => ({
         pos: camera.position.toArray().map((n) => +n.toFixed(2)),
         tgt: (controls.current?.target.toArray() ?? [0, 0, 0]).map((n) => +n.toFixed(2)),

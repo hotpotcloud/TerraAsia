@@ -56,6 +56,17 @@ export function SceneView({ asia, world, compassRef }: Props) {
    * 把底图搬到亚洲层的坐标系里，两层才真正叠在一起（球面模式不用搬，各自映射）。
    */
   const worldOffset = useMemo<[number, number]>(() => asia.proj.lonLatToWorld(0, 0), [asia]);
+  /** 精细层覆盖范围：全球底图在此区域内让位，避免两套高程网格穿插 */
+  const overlayBounds = useMemo(
+    () => ({
+      lon0: asia.proj.lon0,
+      lon1: asia.proj.lon1,
+      lat0: asia.proj.lat0,
+      lat1: asia.proj.lat1,
+      inset: 0.5,
+    }),
+    [asia],
+  );
 
   return (
     <SceneContext.Provider value={{ data, handles }}>
@@ -68,7 +79,7 @@ export function SceneView({ asia, world, compassRef }: Props) {
         >
           <color attach="background" args={[0x060d16]} />
 
-          <TerrainMesh pack={world} mapping={data.worldMap} world flatOffset={worldOffset} />
+          <TerrainMesh pack={world} mapping={data.worldMap} world flatOffset={worldOffset} overlayBounds={overlayBounds} />
           <TerrainMesh pack={asia} mapping={data.asiaMap} />
           <VectorLayers />
           <FlowLayers />

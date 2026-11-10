@@ -4,7 +4,7 @@ import { useFrame } from '@react-three/fiber';
 import { GLOBE_U, globeGLSL } from '../data/globe';
 import type { FieldPack } from '../data/terrainLoader';
 import type { Mapping } from '../data/globe';
-import { buildTerrainGeometry } from './terrainGeometry';
+import { buildTerrainGeometry, type OverlayBounds } from './terrainGeometry';
 import { createTerrainMaterial } from './terrainMaterial';
 import { useScene } from './SceneContext';
 import { useAppStore } from '../state/store';
@@ -21,19 +21,21 @@ interface Props {
    * 球面模式下各层自带 lon0/WX 映射，不需要偏移，所以按 uGlobe 淡出。
    */
   flatOffset?: [number, number];
+  /** 仅全球底图传入：精细层覆盖区，底图在此让位 */
+  overlayBounds?: OverlayBounds;
 }
 
 /**
  * 一张地形网格。亚洲高精 patch 与全球粗底图共用同一套着色器，
  * 差别只在映射常数与几个开关：底图铺满球面，patch 压在上面无缝衔接。
  */
-export function TerrainMesh({ pack, mapping, world = false, flatOffset }: Props) {
+export function TerrainMesh({ pack, mapping, world = false, flatOffset, overlayBounds }: Props) {
   const { handles } = useScene();
   const exag = useAppStore((s) => s.exag);
   const meshRef = useRef<THREE.Mesh>(null);
 
   const built = useMemo(() => {
-    const geo = buildTerrainGeometry(pack, exag, world);
+    const geo = buildTerrainGeometry(pack, exag, world, overlayBounds);
     const { material, uniforms } = createTerrainMaterial({
       mapping,
       glsl: globeGLSL(mapping),
@@ -50,7 +52,9 @@ export function TerrainMesh({ pack, mapping, world = false, flatOffset }: Props)
     }
     material.side = THREE.FrontSide;
     if (world) {
-      /* 底图往后推一点：亚洲 patch 与它几乎共面，靠深度偏移决定谁在上层，避免 z-fighting */
+      /* 覆盖区内地表归属已由 aOverlay 决定（底图让位）；这里的深度偏移只用于
+         覆盖区边界那一圈过渡带，避免两层恰好共面时的细微闪烁。
+         它不能替代覆盖规则，也不能靠加大它来消除穿插。 */
       material.polygonOffset = true;
       material.polygonOffsetFactor = 1;
       material.polygonOffsetUnits = 1;
@@ -58,7 +62,7 @@ export function TerrainMesh({ pack, mapping, world = false, flatOffset }: Props)
     return { geometry: geo.geometry, setExag: geo.setExag, material, uniforms };
     // 夸张度只影响初始顶点高度，之后的调整走 setExag，所以不进依赖
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pack, mapping, world, handles]);
+  }, [pack, mapping, world, handles, overlayBounds]);
 
   // 句柄交给桥接层（相机贴地、太阳、模式切换都要用）
   useEffect(() => {
