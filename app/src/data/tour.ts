@@ -112,3 +112,49 @@ export function globeCam(d = EARTH_R * 3.0): CamPose {
     tgt: [0, 0, 0],
   };
 }
+
+/**
+ * 球面机位：站在指定经纬度的正上方 d 处看向地心。
+ *
+ * 为什么必须和 camAt 分开：camAt 产出的坐标是**平面世界坐标**（以亚洲图幅中心
+ * 102.5°E 为原点、1° = 1.965 单位），把它直接喂给球面模式，等于拿一张平面地图的
+ * 米尺去量一个半径 110 的球——「聚焦中国」算出来的落点是 (≈3, 150, ≈0)，
+ * 正好悬在北极上空，看起来就成了「点了中国却飞到北极」。
+ */
+export function globeAt(lon: number, lat: number, d: number): CamPose {
+  const lo = (lon * Math.PI) / 180;
+  const la = (lat * Math.PI) / 180;
+  const r = Math.cos(la);
+  return {
+    pos: [r * Math.sin(lo) * d, Math.sin(la) * d, r * Math.cos(lo) * d],
+    tgt: [0, 0, 0],
+  };
+}
+
+/**
+ * 平面视距 → 球面视距（距地心）。
+ *
+ * 两个尺度本来就几乎 1:1（平面 1° 经度 = 1.965 世界单位，球面 = 1.92），
+ * 直接抬到球面上即可；乘 0.62 是为了让「聚焦中国」停在「地球占满画面」那一档，
+ * 而不是把整颗星球缩成一颗弹珠。上下限保证相机既不会钻进地表，也不会退到看不清。
+ */
+export function globeDistOf(flatDist: number): number {
+  return Math.min(EARTH_R * 3.1, Math.max(EARTH_R * 1.35, EARTH_R + flatDist * 0.62));
+}
+
+/**
+ * 机位统一入口：按当前形态（平面 / 球面）给出正确坐标系下的机位。
+ * 所有「飞到某个经纬度」的路径都必须走这里，否则球面模式会算到北极上空。
+ */
+export function poseOf(
+  pack: FieldPack,
+  exag: number,
+  globe: boolean,
+  lon: number,
+  lat: number,
+  dist: number,
+  az = 0.45,
+  elevDeg = 40,
+): CamPose {
+  return globe ? globeAt(lon, lat, globeDistOf(dist)) : camAt(pack, exag, lon, lat, dist, az, elevDeg);
+}

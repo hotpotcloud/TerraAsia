@@ -26,7 +26,9 @@
     "shots": "node scripts/capture-shots.js",
     "shot": "node scripts/shot.js",
     "deploy:setup": "bash deploy/setup-server.sh",
-    "check:func": "node scripts/check-func.js"
+    "check:func": "node scripts/check-func.js",
+    "check:sandbox": "node scripts/check-sandbox.js",
+    "check:nav": "node scripts/check-nav.js"
   },
   "keywords": [
     "three.js",

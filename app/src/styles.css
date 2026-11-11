@@ -461,7 +461,8 @@ input[type='range'] { flex: 1; accent-color: #38bdf8; }
 .legend {
   position: absolute;
   left: 50%;
-  bottom: 14px;
+  /* 让出底部给铭牌：图例只在派生图下出现，铭牌常驻，两者叠在正中会互相压 */
+  bottom: 58px;
   transform: translateX(-50%);
   z-index: 10;
   background: rgba(8, 17, 28, 0.82);
@@ -498,3 +499,35 @@ input[type='range'] { flex: 1; accent-color: #38bdf8; }
   .legend { display: none; }
 }
 .lg-foot { margin-top: 4px; color: #6f8aa3; font-size: 9.5px; }
+
+/* ---------------- 沙盘铭牌与比例尺（底部居中） ---------------- */
+.plate {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  background: rgba(8, 17, 28, 0.82);
+  border: 1px solid #122438;
+  border-radius: 8px;
+  font-size: 11px;
+  color: #93aec2;
+  pointer-events: none;
+  white-space: nowrap;
+}
+.pl-title { color: #cfe6f7; letter-spacing: 0.14em; font-weight: 600; }
+.pl-sep { width: 1px; height: 11px; background: #1e3a52; }
+.pl-meta { color: #8fa9bd; letter-spacing: 0.04em; }
+.pl-scale { display: flex; align-items: center; gap: 6px; }
+.pl-barwrap { display: inline-flex; align-items: flex-end; }
+/* 比例尺画成「⊔」形：底边 + 两端短竖线，比一根横线更容易读端点 */
+.pl-bar { display: block; width: 60px; height: 6px; border: 1px solid #7fa6c4; border-top: none; border-radius: 0 0 1px 1px; }
+.pl-num { font-variant-numeric: tabular-nums; color: #cfe6f7; min-width: 48px; }
+
+@media (max-width: 900px) {
+  .plate { display: none; }
+}

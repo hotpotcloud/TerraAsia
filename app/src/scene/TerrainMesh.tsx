@@ -33,6 +33,7 @@ export function TerrainMesh({ pack, mapping, world = false, flatOffset, overlayB
   const { handles } = useScene();
   const exag = useAppStore((s) => s.exag);
   const derived = useAppStore((s) => s.derived);
+  const sandbox = useAppStore((s) => s.sandbox);
   const meshRef = useRef<THREE.Mesh>(null);
 
   const built = useMemo(() => {
@@ -108,9 +109,18 @@ export function TerrainMesh({ pack, mapping, world = false, flatOffset, overlayB
   // 平面模式的对齐偏移：球面模式必须为 0（球面靠各层自己的 lon0/WX 映射对位）
   useFrame(() => {
     const mesh = meshRef.current;
-    if (!mesh || !flatOffset) return;
-    const k = 1 - GLOBE_U.value;
-    mesh.position.set(flatOffset[0] * k, 0, flatOffset[1] * k);
+    if (!mesh) return;
+    if (flatOffset) {
+      const k = 1 - GLOBE_U.value;
+      mesh.position.set(flatOffset[0] * k, 0, flatOffset[1] * k);
+    }
+    if (world) {
+      /* 沙盘模式只留亚洲精块。全球底图一旦在场，就会在断面外侧露出一圈
+         「没被切掉的地形」，模型立刻变回一张摊开的地图。
+         用 GLOBE_U 而不是 viewMode：球面回归时底图要跟着形变一起回来。 */
+      const on = !sandbox || GLOBE_U.value > 0.02;
+      if (mesh.visible !== on) mesh.visible = on;
+    }
   });
 
   // 卸载时释放 GPU 资源

@@ -167,6 +167,12 @@ function ViewPanel() {
       <Group title="常用">
         <Slider label="地形起伏" value={s.exag} min={1} max={16} step={0.5} suffix="×" onChange={s.setExag} />
         <p className="note">数值越大，山体高低越明显；横向为真实比例，纵向已放大以便读地形。</p>
+        <Check checked={s.sandbox} onChange={s.setSandbox}>
+          沙盘底座
+        </Check>
+        <p className="note">
+          开启后只保留亚洲精块，四周立起断面侧壁，像一件摆在台面上的实体模型；关闭则退回地形图形态，周边地形一并显示。
+        </p>
       </Group>
       <Group title="光照与阴影" defaultOpen={false}>
         <Slider label="太阳方位" value={s.sunAz} min={0} max={360} step={1} suffix="°" onChange={(v) => s.setSun(v, s.sunEl)} />

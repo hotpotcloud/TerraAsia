@@ -1,3 +1,6 @@
+import { useEffect, useRef } from 'react';
+import { U_PER_DEG } from '../data/projection';
+import { viewState } from '../scene/viewState';
 import { useAppStore, type PanelKind } from '../state/store';
 
 export function LoadingScreen({
@@ -208,6 +211,71 @@ export function DerivedLegend() {
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+/* ---------------- 沙盘铭牌与比例尺 ---------------- */
+
+/** 比例尺可选的整数刻度（米）。只取 1/2/5 序列，读起来不用换算 */
+const NICE_M = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000];
+
+/**
+ * 铭牌 + 比例尺。
+ *
+ * 沙盘是「有比例」的东西——没有比例尺，它就只是个三维模型。这里的换算不能用
+ * 相机距离直接乘常数：世界单位是按经度定的（1° = 1.965 单位），而 1° 经度的地面
+ * 长度随纬度按 cos(lat) 收缩，漠河与曾母暗沙差 2.3 倍。纬度由桥接层每帧写进
+ * viewState，这里只做换算与画线。
+ *
+ * 用 rAF 直接改 DOM 宽度，不走 zustand：每帧一次 setState 会把整棵 UI 树重渲染。
+ */
+export function Plate() {
+  const exag = useAppStore((s) => s.exag);
+  const viewMode = useAppStore((s) => s.viewMode);
+  const barRef = useRef<HTMLDivElement | null>(null);
+  const numRef = useRef<HTMLSpanElement | null>(null);
+
+  useEffect(() => {
+    let raf = 0;
+    const tick = () => {
+      raf = requestAnimationFrame(tick);
+      const bar = barRef.current;
+      const num = numRef.current;
+      if (!bar || !num) return;
+      const H = window.innerHeight || 1;
+      // 目标平面上一个像素对应多少世界单位 → 再换成地面米数
+      const worldPerPx = (2 * viewState.camDist * Math.tan((25 * Math.PI) / 180)) / H;
+      const mPerWorld = (111320 * Math.cos((viewState.camLat * Math.PI) / 180)) / U_PER_DEG;
+      const mPerPx = Math.max(worldPerPx * mPerWorld, 1e-6);
+      // 取一个让线长落在 60~140 px 之间的整数刻度
+      let pick = NICE_M[0];
+      for (const n of NICE_M) if (n / mPerPx <= 140) pick = n;
+      const px = Math.max(28, Math.min(140, pick / mPerPx));
+      bar.style.width = `${px.toFixed(0)}px`;
+      const text = pick >= 1000 ? `${pick / 1000} km` : `${pick} m`;
+      if (num.textContent !== text) num.textContent = text;
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
+  if (viewMode === 'globe') return null;
+
+  return (
+    <div className="plate">
+      <span className="pl-title">亚洲三维地形沙盘</span>
+      <span className="pl-sep" />
+      <span className="pl-meta">垂直夸张 {exag}×</span>
+      <span className="pl-sep" />
+      <span className="pl-scale">
+        <span className="pl-barwrap">
+          <span className="pl-bar" ref={barRef} />
+        </span>
+        <span className="pl-num" ref={numRef}>
+          —
+        </span>
+      </span>
     </div>
   );
 }

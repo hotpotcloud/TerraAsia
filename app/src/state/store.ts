@@ -49,6 +49,12 @@ interface AppState {
   sunEl: number;
   shadow: boolean;
   ao: boolean;
+  /**
+   * 沙盘模式：只留亚洲精块，四周立断面侧壁，作为一件实体模型摆在暗色台面上。
+   * 关掉则退回「地形图」形态——全球底图在场，图幅边缘渐隐到背景。
+   * 球面模式不受影响，始终渲染完整星球。
+   */
+  sandbox: boolean;
 
   layers: Record<LayerKey, boolean>;
   labelGroups: Record<LabelGroupKey, boolean>;
@@ -85,6 +91,7 @@ interface AppState {
   setSun(az: number, el: number): void;
   setShadow(on: boolean): void;
   setAO(on: boolean): void;
+  setSandbox(on: boolean): void;
 
   toggleLayer(key: LayerKey): void;
   setLayer(key: LayerKey, on: boolean): void;
@@ -128,6 +135,7 @@ export const useAppStore = create<AppState>((set) => ({
   sunEl: 40,
   shadow: true,
   ao: true,
+  sandbox: true,
 
   layers: {
     coast: true,
@@ -170,6 +178,7 @@ export const useAppStore = create<AppState>((set) => ({
   setSun: (sunAz, sunEl) => set({ sunAz, sunEl }),
   setShadow: (shadow) => set({ shadow }),
   setAO: (ao) => set({ ao }),
+  setSandbox: (sandbox) => set({ sandbox }),
 
   toggleLayer: (key) => set((s) => ({ layers: { ...s.layers, [key]: !s.layers[key] } })),
   setLayer: (key, on) => set((s) => ({ layers: { ...s.layers, [key]: on } })),

@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { useFrame, useThree } from '@react-three/fiber';
 import { EARTH_R, GLOBE_U } from '../data/globe';
 import { findProvince, indexProvinces, raycastFlat } from '../data/geo';
-import { STEPS, camAt, globeCam, shotAt } from '../data/tour';
+import { STEPS, camAt, globeCam, poseOf, shotAt } from '../data/tour';
 import { setSun } from './terrainMaterial';
 import { useScene } from './SceneContext';
 import { useAppStore } from '../state/store';
@@ -96,6 +96,13 @@ export function SceneBridge({
     };
   };
 
+  /**
+   * 按当前形态取机位。凡是「飞到某个经纬度」都必须走这里：
+   * 平面机位是墨卡托世界坐标，球面机位是半径 110 的球面坐标，两者不能混用。
+   */
+  const poseAt = (lon: number, lat: number, dist: number, az = 0.5, elev = 34) =>
+    poseOf(pack, exag, useAppStore.getState().viewMode === 'globe', lon, lat, dist, az, elev);
+
   /* ---------- 开场：自东向西逐级升起 ---------- */
   const reveal = useRef({ t0: 0, on: true });
 
@@ -120,7 +127,8 @@ export function SceneBridge({
 
   // 导览步进 → 飞过去
   useEffect(() => {
-    flyTo(shotAt(pack, exag, step), 2000);
+    const s = STEPS[step % STEPS.length];
+    flyTo(poseAt(s.lon, s.lat, s.dist, s.az, s.elev), 2000);
     if (handles.asiaUniforms) {
       const dim = STEPS[step % STEPS.length].dim;
       (handles.asiaUniforms.uDim.value as THREE.Vector3).set(dim[0], dim[1], dim[2]);
@@ -131,18 +139,21 @@ export function SceneBridge({
   // 视角快捷键
   useEffect(() => {
     if (flyKey === 0) return;
-    if (flyKind === 'asia') flyTo(camAt(pack, exag, 101, 50, 286, 0.3, 48), 1800);
-    else if (flyKind === 'cn') flyTo(camAt(pack, exag, 104, 35, 150, 0.49, 38), 1800);
-    else flyTo(shotAt(pack, exag, useAppStore.getState().step), 1800);
+    if (flyKind === 'asia') flyTo(poseAt(101, 50, 286, 0.3, 48), 1800);
+    else if (flyKind === 'cn') flyTo(poseAt(104, 35, 150, 0.49, 38), 1800);
+    else {
+      const s = STEPS[useAppStore.getState().step % STEPS.length];
+      flyTo(poseAt(s.lon, s.lat, s.dist, s.az, s.elev), 1800);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [flyKey]);
 
   /* POI 详情卡的「定位到这里」：拉到要素上方一个固定视距。
      dist 取 26（约省域尺度），比导览机位更近 —— 点到「贡嘎山」就该看见那条山脊，
-     而不是退回全省。球面模式下同样适用：camAt 用的世界坐标在球面上会跟着卷。 */
+     而不是退回全省。走 poseAt 才能保证球面模式下落在同一片山脊上。 */
   useEffect(() => {
     if (focusKey === 0 || !focus) return;
-    flyTo(camAt(pack, exag, focus.lon, focus.lat, 26, 0.5, 34), 1400);
+    flyTo(poseAt(focus.lon, focus.lat, 26, 0.5, 34), 1400);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusKey]);
 
@@ -290,9 +301,13 @@ export function SceneBridge({
 
   /* ---------- 每帧 ---------- */
   const autoTimer = useRef(0);
+  /** 已绘制帧数。低帧率（软件渲染）下「补间没走完」和「逻辑没生效」必须能分开，
+   *  光看相机坐标是分不出来的 —— 两个都是「不动」。 */
+  const frames = useRef(0);
 
   useFrame((_, dt) => {
     const now = performance.now();
+    frames.current++;
 
     // 形变过渡：按时间推进，不按帧插值 —— 低帧率下指数插值会卡在中间态
     if (Math.abs(mix.current - tween.current.to) > 1e-5) {
@@ -345,6 +360,11 @@ export function SceneBridge({
       ? camera.position.distanceTo(controls.current.target)
       : camera.position.length();
     viewState.camDist = dist;
+    /* 比例尺要按纬度折算地面米数（1° 经度的地面长度随 cos(lat) 收缩），
+       目标点纬度每帧算一次，代价只有一次世界坐标反解。 */
+    if (controls.current) {
+      viewState.camLat = pack.proj.worldToLonLat(controls.current.target.x, controls.current.target.z)[1];
+    }
     const lod = dist > 110 ? 0 : dist > 58 ? 1 : dist > 34 ? 2 : 3;
     if (lod !== viewState.lod) viewState.lod = lod;
 
@@ -469,6 +489,14 @@ export function SceneBridge({
         revealed: viewState.revealed,
         exag,
         viewMode,
+        /** 帧计数：用来区分「补间还在跑」与「逻辑没触发」 */
+        frames: frames.current,
+        /** 补间剩余毫秒；null = 当前没有相机补间 */
+        animLeft: anim.current ? Math.max(0, Math.round(anim.current.t0 + anim.current.dur - performance.now())) : null,
+        flyKind: useAppStore.getState().flyKind,
+        flyKey: useAppStore.getState().flyKey,
+        /** 沙盘断面侧壁不透明度：0 = 已收起（关闭底座 / 已切到球面） */
+        wall: +viewState.wall.toFixed(3),
       }),
       uniforms: () => handles.asiaUniforms,
       /**

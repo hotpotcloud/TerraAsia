@@ -7,6 +7,7 @@ import { mappingOf } from '../data/globe';
 import { shotAt } from '../data/tour';
 import { SceneContext, type SceneHandles } from './SceneContext';
 import { TerrainMesh } from './TerrainMesh';
+import { SandTable } from './SandTable';
 import { VectorLayers } from './VectorLayers';
 import { FlowLayers } from './FlowLayers';
 import { GlobeDecor } from './GlobeDecor';
@@ -81,6 +82,7 @@ export function SceneView({ asia, world, compassRef }: Props) {
 
           <TerrainMesh pack={world} mapping={data.worldMap} world flatOffset={worldOffset} overlayBounds={overlayBounds} />
           <TerrainMesh pack={asia} mapping={data.asiaMap} />
+          <SandTable pack={asia} />
           <VectorLayers />
           <FlowLayers />
           <GlobeDecor />
