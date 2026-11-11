@@ -56,6 +56,12 @@ interface AppState {
    */
   sandbox: boolean;
 
+  /**
+   * 分块 LOD：亚洲精块按 4×4 切成瓦片，近处的块用 2 倍密度（插值补细节），
+   * 远处的块降采样。关掉退回单张网格（`docs/11 §6.1` 的回退路径）。
+   */
+  tiles: boolean;
+
   layers: Record<LayerKey, boolean>;
   labelGroups: Record<LabelGroupKey, boolean>;
 
@@ -92,6 +98,7 @@ interface AppState {
   setShadow(on: boolean): void;
   setAO(on: boolean): void;
   setSandbox(on: boolean): void;
+  setTiles(on: boolean): void;
 
   toggleLayer(key: LayerKey): void;
   setLayer(key: LayerKey, on: boolean): void;
@@ -136,6 +143,7 @@ export const useAppStore = create<AppState>((set) => ({
   shadow: true,
   ao: true,
   sandbox: true,
+  tiles: true,
 
   layers: {
     coast: true,
@@ -179,6 +187,7 @@ export const useAppStore = create<AppState>((set) => ({
   setShadow: (shadow) => set({ shadow }),
   setAO: (ao) => set({ ao }),
   setSandbox: (sandbox) => set({ sandbox }),
+  setTiles: (tiles) => set({ tiles }),
 
   toggleLayer: (key) => set((s) => ({ layers: { ...s.layers, [key]: !s.layers[key] } })),
   setLayer: (key, on) => set((s) => ({ layers: { ...s.layers, [key]: on } })),

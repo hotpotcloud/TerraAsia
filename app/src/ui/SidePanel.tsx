@@ -173,6 +173,12 @@ function ViewPanel() {
         <p className="note">
           开启后只保留亚洲精块，四周立起断面侧壁，像一件摆在台面上的实体模型；关闭则退回地形图形态，周边地形一并显示。
         </p>
+        <Check checked={s.tiles} onChange={s.setTiles}>
+          分块 LOD
+        </Check>
+        <p className="note">
+          把亚洲精块切成 16 块瓦片：视点附近的块补到 2 倍密度（山脊线更顺），远处的块降采样。关掉退回单张网格。
+        </p>
       </Group>
       <Group title="光照与阴影" defaultOpen={false}>
         <Slider label="太阳方位" value={s.sunAz} min={0} max={360} step={1} suffix="°" onChange={(v) => s.setSun(v, s.sunEl)} />

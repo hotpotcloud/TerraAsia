@@ -75,8 +75,57 @@ const log = [];
   log.push({ step: 'default', wall: w0 });
   if (w0 < 0.9) fail.push(`默认应显示断面侧壁，实际不透明度 ${w0}`);
 
-  /* ---------- 2. 关掉底座：退回地形图形态 ---------- */
+  /* ---------- 1b. 分块 LOD：16 块全部建好，且三级分布自洽 ---------- */
+  const tilesDone = await page
+    .waitForFunction(() => window.__ta.info().tiles.done >= 16, null, { timeout: 90000, polling: 300 })
+    .then(() => true)
+    .catch(() => false);
+  const t0 = await page.evaluate(() => window.__ta.info().tiles);
+  log.push({ step: 'tiles', tilesDone, ...t0 });
+  if (!tilesDone) fail.push(`分块 LOD 未建满 16 块：${JSON.stringify(t0)}`);
+  if (t0.near + t0.mid + t0.far !== t0.done) fail.push(`分块分级统计不自洽：${JSON.stringify(t0)}`);
+
+  /* ---------- 1c. 关掉分块再打开：换层后点亮进度不能丢 ----------
+     曾经的 bug：点亮动画只在开场 5.2 s 内由桥接层推进，新挂载的材质 uReveal 停在 0，
+     画面直接黑一半。这条断言守住「换层后 uReveal 必须已是 1」。 */
   await clickTb('画面');
+  await page.waitForTimeout(300);
+  const tilesOff = await page.evaluate(() => {
+    const el = [...document.querySelectorAll('label.chk')].find((l) => (l.textContent || '').includes('分块 LOD'));
+    const box = el && el.querySelector('input[type=checkbox]');
+    if (!box) return null;
+    box.click();
+    return true;
+  });
+  if (!tilesOff) fail.push('找不到「分块 LOD」勾选框');
+  const revealOk = await page
+    .waitForFunction(() => (window.__ta.uniforms()?.uReveal.value ?? 0) > 0.99, null, {
+      timeout: 30000,
+      polling: 200,
+    })
+    .then(() => true)
+    .catch(() => false);
+  log.push({ step: 'tiles-off', revealOk });
+  if (!revealOk) fail.push('切回单网格后点亮进度丢失（uReveal < 1，画面会半黑）');
+
+  const tilesOn = await page.evaluate(() => {
+    const el = [...document.querySelectorAll('label.chk')].find((l) => (l.textContent || '').includes('分块 LOD'));
+    const box = el && el.querySelector('input[type=checkbox]');
+    if (!box) return null;
+    box.click();
+    return true;
+  });
+  const tilesBack = await page
+    .waitForFunction(() => window.__ta.info().tiles.done >= 16, null, { timeout: 90000, polling: 300 })
+    .then(() => true)
+    .catch(() => false);
+  log.push({ step: 'tiles-back', tilesOn, tilesBack });
+  if (!tilesBack) fail.push('重新开启分块 LOD 后未建满 16 块');
+
+  /* ---------- 2. 关掉底座：退回地形图形态 ---------- */
+  /* 面板是开关式的：上面切分块 LOD 时已经打开过，这里只在没打开时才点，否则会把它关掉 */
+  const panelOpen = await page.evaluate(() => !!document.querySelector('label.chk'));
+  if (!panelOpen) await clickTb('画面');
   await page.waitForTimeout(300);
   const off = await toggleSandbox();
   if (off === null) fail.push('找不到「沙盘底座」勾选框');

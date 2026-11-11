@@ -8,6 +8,7 @@ import { shotAt } from '../data/tour';
 import { SceneContext, type SceneHandles } from './SceneContext';
 import { CAM_FOV } from './camera';
 import { TerrainMesh } from './TerrainMesh';
+import { TerrainTiles } from './TerrainTiles';
 import { SandTable } from './SandTable';
 import { VectorLayers } from './VectorLayers';
 import { FlowLayers } from './FlowLayers';
@@ -27,6 +28,7 @@ export function SceneView({ asia, world, compassRef }: Props) {
   const [host, setHost] = useState<HTMLDivElement | null>(null);
   const controls = useRef<OrbitLike | null>(null);
   const exag = useAppStore((s) => s.exag);
+  const tiles = useAppStore((s) => s.tiles);
 
   const data = useMemo(
     () => ({
@@ -82,7 +84,8 @@ export function SceneView({ asia, world, compassRef }: Props) {
           <color attach="background" args={[0x060d16]} />
 
           <TerrainMesh pack={world} mapping={data.worldMap} world flatOffset={worldOffset} overlayBounds={overlayBounds} />
-          <TerrainMesh pack={asia} mapping={data.asiaMap} />
+          {/* 分块 LOD 与单网格二选一：两者同时绘制同一区域会重新引入共面穿插 */}
+          {tiles ? <TerrainTiles pack={asia} mapping={data.asiaMap} /> : <TerrainMesh pack={asia} mapping={data.asiaMap} />}
           <SandTable pack={asia} />
           <VectorLayers />
           <FlowLayers />

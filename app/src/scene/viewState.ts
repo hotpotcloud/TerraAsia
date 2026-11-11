@@ -18,4 +18,10 @@ export const viewState = {
   selAmt: 0,
   /** 沙盘断面侧壁的当前不透明度 0..1（球面过渡时淡出，回归脚本据此判断） */
   wall: 0,
+  /** 分块 LOD 的实时统计：已建块数 / 各级块数 / 总顶点数（铭牌与回归脚本读） */
+  tilesDone: 0,
+  tilesNear: 0,
+  tilesMid: 0,
+  tilesFar: 0,
+  tilesVerts: 0,
 };

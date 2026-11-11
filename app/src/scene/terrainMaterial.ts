@@ -50,6 +50,88 @@ function rampColor(h: number): [number, number, number] {
   return [L[1], L[2], L[3]];
 }
 
+/** 一个采样点上的四项地表数值（分块 LOD 双线性插值后要用同一套配色） */
+export interface SurfaceSample {
+  elev: number;
+  landW: number;
+  depth: number;
+  cnW: number;
+}
+
+/**
+ * 由采样值求顶点色。
+ * `gi/gj` 是**网格坐标**（可为小数）：边缘渐隐按到图幅边的格数算，与采样密度无关，
+ * 所以同一处无论在哪个瓦片、哪一级密度，颜色都完全一致 —— 不这么做，瓦片拼缝处
+ * 会出现一条比周围亮/暗的细线。
+ */
+export function colorOf(
+  pack: FieldPack,
+  s: SurfaceSample,
+  gi: number,
+  gj: number,
+): { rgb: [number, number, number]; edge: number } {
+  const { GW, GH } = pack;
+  const lc = rampColor(s.elev);
+  /* 中国以外陆地：保留真实起伏，但去饱和 + 蓝偏 + 压暗 → 「冷灰浮雕底衬」。
+     压暗必须够狠：去饱和会把绿色推向高亮度灰，只降饱和不降亮度整块大陆会发白发平。
+     但也不能狠到把起伏抹掉——放大近景时蒙古高原、中南半岛、朝鲜半岛如果压成
+     一片死灰，国境线两侧会强烈断裂，看着像「境外没渲染」。折中：去饱和压到 0.40、
+     亮度压到 ~0.78，保留可见的坡向明暗，让它读作「真实但弱化的邻国」而非「空洞」。 */
+  const gL = lc[0] * 0.3 + lc[1] * 0.59 + lc[2] * 0.11;
+  const ncol: [number, number, number] = [
+    lerp(lc[0], gL, 0.40) * 0.80,
+    lerp(lc[1], gL, 0.40) * 0.83,
+    lerp(lc[2], gL, 0.40) * 0.88,
+  ];
+  /* 海洋三段：陆架 / 海盆 / 深海沟。只做两段渐变会糊成一片均匀的蓝，
+     看不出「哪里是浅海」。 */
+  const df = Math.min(1, s.depth);
+  const wc: [number, number, number] =
+    df < 0.42
+      ? [
+          lerp(W_SHALLOW[0], W_MID[0], df / 0.42),
+          lerp(W_SHALLOW[1], W_MID[1], df / 0.42),
+          lerp(W_SHALLOW[2], W_MID[2], df / 0.42),
+        ]
+      : [
+          lerp(W_MID[0], W_DEEP[0], (df - 0.42) / 0.58),
+          lerp(W_MID[1], W_DEEP[1], (df - 0.42) / 0.58),
+          lerp(W_MID[2], W_DEEP[2], (df - 0.42) / 0.58),
+        ];
+
+  const isCN = s.cnW;
+  const w = s.landW;
+  const bl = Math.min(1, Math.max(0, (w - 0.45) / 0.15)); // 水→陆过渡
+  const rgb: [number, number, number] = [
+    lerp(wc[0], lerp(ncol[0], lc[0], isCN), bl),
+    lerp(wc[1], lerp(ncol[1], lc[1], isCN), bl),
+    lerp(wc[2], lerp(ncol[2], lc[2], isCN), bl),
+  ];
+
+  /* 边缘渐隐宽度：陆地窄一点（保住大陆轮廓），水面宽一点（让图幅边界消失） */
+  const ed = Math.min(gi, GW - 1 - gi, gj, GH - 1 - gj);
+  const span = bl > 0.01 ? 0.09 * GW : 0.13 * GW;
+  return { rgb, edge: smoothstep(0, 1, Math.max(0, Math.min(1, ed / span))) };
+}
+
+/**
+ * 单点设色：从整幅数值场取第 (i, j) 格。
+ * 分块 LOD 另走 `colorOf`（它先把四项数值双线性插值再求色），两者配色逻辑只此一份。
+ */
+export function vertexColorAt(
+  pack: FieldPack,
+  i: number,
+  j: number,
+): { rgb: [number, number, number]; edge: number } {
+  const n = j * pack.GW + i;
+  return colorOf(
+    pack,
+    { elev: pack.elev[n], landW: pack.landW[n], depth: pack.depth[n], cnW: pack.cnW[n] },
+    i,
+    j,
+  );
+}
+
 /**
  * 顶点色：分层设色 + 境外去饱和压暗 + 海面三段。
  * 图幅边缘渐隐不再烘进颜色，而是拆成独立属性 aEdge —— 地球模式下要把它关掉，
@@ -57,7 +139,6 @@ function rampColor(h: number): [number, number, number] {
  */
 export function buildVertexColors(pack: FieldPack): { color: Float32Array; edge: Float32Array } {
   const { GW, GH } = pack;
-  const { elev, landW, depth, cnW } = pack;
   const col = new Float32Array(GW * GH * 3);
   const edge = new Float32Array(GW * GH);
 
@@ -65,45 +146,11 @@ export function buildVertexColors(pack: FieldPack): { color: Float32Array; edge:
     for (let i = 0; i < GW; i++) {
       const n = j * GW + i;
       const k3 = n * 3;
-      const lc = rampColor(elev[n]);
-      /* 中国以外陆地：保留真实起伏，但去饱和 + 蓝偏 + 压暗 → 「冷灰浮雕底衬」。
-         压暗必须够狠：去饱和会把绿色推向高亮度灰，只降饱和不降亮度整块大陆会发白发平。
-         但也不能狠到把起伏抹掉——放大近景时蒙古高原、中南半岛、朝鲜半岛如果压成
-         一片死灰，国境线两侧会强烈断裂，看着像「境外没渲染」。折中：去饱和压到 0.40、
-         亮度压到 ~0.78，保留可见的坡向明暗，让它读作「真实但弱化的邻国」而非「空洞」。 */
-      const gL = lc[0] * 0.3 + lc[1] * 0.59 + lc[2] * 0.11;
-      const ncol: [number, number, number] = [
-        lerp(lc[0], gL, 0.40) * 0.80,
-        lerp(lc[1], gL, 0.40) * 0.83,
-        lerp(lc[2], gL, 0.40) * 0.88,
-      ];
-      /* 海洋三段：陆架 / 海盆 / 深海沟。只做两段渐变会糊成一片均匀的蓝，
-         看不出「哪里是浅海」。 */
-      const df = Math.min(1, depth[n]);
-      const wc: [number, number, number] =
-        df < 0.42
-          ? [
-              lerp(W_SHALLOW[0], W_MID[0], df / 0.42),
-              lerp(W_SHALLOW[1], W_MID[1], df / 0.42),
-              lerp(W_SHALLOW[2], W_MID[2], df / 0.42),
-            ]
-          : [
-              lerp(W_MID[0], W_DEEP[0], (df - 0.42) / 0.58),
-              lerp(W_MID[1], W_DEEP[1], (df - 0.42) / 0.58),
-              lerp(W_MID[2], W_DEEP[2], (df - 0.42) / 0.58),
-            ];
-
-      const isCN = cnW[n];
-      const w = landW[n];
-      const bl = Math.min(1, Math.max(0, (w - 0.45) / 0.15)); // 水→陆过渡
-      col[k3] = lerp(wc[0], lerp(ncol[0], lc[0], isCN), bl);
-      col[k3 + 1] = lerp(wc[1], lerp(ncol[1], lc[1], isCN), bl);
-      col[k3 + 2] = lerp(wc[2], lerp(ncol[2], lc[2], isCN), bl);
-
-      /* 边缘渐隐宽度：陆地窄一点（保住大陆轮廓），水面宽一点（让图幅边界消失） */
-      const ed = Math.min(i, GW - 1 - i, j, GH - 1 - j);
-      const span = bl > 0.01 ? 0.09 * GW : 0.13 * GW;
-      edge[n] = smoothstep(0, 1, Math.min(1, ed / span));
+      const v = vertexColorAt(pack, i, j);
+      col[k3] = v.rgb[0];
+      col[k3 + 1] = v.rgb[1];
+      col[k3 + 2] = v.rgb[2];
+      edge[n] = v.edge;
     }
   }
   return { color: col, edge };

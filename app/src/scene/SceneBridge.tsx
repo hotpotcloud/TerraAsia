@@ -503,6 +503,14 @@ export function SceneBridge({
         flyKey: useAppStore.getState().flyKey,
         /** 沙盘断面侧壁不透明度：0 = 已收起（关闭底座 / 已切到球面） */
         wall: +viewState.wall.toFixed(3),
+        /** 分块 LOD 的实时分布（回归脚本判「分级真的生效了」） */
+        tiles: {
+          done: viewState.tilesDone,
+          near: viewState.tilesNear,
+          mid: viewState.tilesMid,
+          far: viewState.tilesFar,
+          verts: viewState.tilesVerts,
+        },
       }),
       uniforms: () => handles.asiaUniforms,
       /**

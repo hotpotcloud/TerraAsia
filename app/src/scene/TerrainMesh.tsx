@@ -7,6 +7,7 @@ import type { Mapping } from '../data/globe';
 import { buildTerrainGeometry, type OverlayBounds } from './terrainGeometry';
 import { createTerrainMaterial } from './terrainMaterial';
 import { useScene } from './SceneContext';
+import { viewState } from './viewState';
 import { useAppStore } from '../state/store';
 
 interface Props {
@@ -51,6 +52,10 @@ export function TerrainMesh({ pack, mapping, world = false, flatOffset, overlayB
     });
     // 所有人共用同一个 uGlobe 对象，一次改值全体同步
     uniforms.uGlobe = GLOBE_U;
+    /* 点亮动画只由桥接层在开场那 5.2 s 内推进，之后再也不写这个 uniform。
+       分块开关会让这层网格中途重新挂载，新材质若从 0 开始就永远停在「没点亮」，
+       画面直接黑一半——初值必须对齐当前进度。 */
+    uniforms.uReveal.value = viewState.revealed ? 1 : 0;
     material.uniforms = uniforms;
     uniforms.uAO.value = pack.aoTex;
     uniforms.uHeight.value = pack.heightTex;
