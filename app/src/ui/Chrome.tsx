@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { U_PER_DEG } from '../data/projection';
+import { CAM_FOV } from '../scene/camera';
 import { viewState } from '../scene/viewState';
 import { useAppStore, type PanelKind } from '../state/store';
 
@@ -244,8 +245,10 @@ export function Plate() {
       const num = numRef.current;
       if (!bar || !num) return;
       const H = window.innerHeight || 1;
-      // 目标平面上一个像素对应多少世界单位 → 再换成地面米数
-      const worldPerPx = (2 * viewState.camDist * Math.tan((25 * Math.PI) / 180)) / H;
+      /* 目标平面上一个像素对应多少世界单位 → 再换成地面米数。
+         半视角必须用相机真实 FOV（CAM_FOV / 2），写死一个偏小的角度会让
+         刻度标称只有实际地面距离的一半 —— 沙盘的比例尺错了就只是模型。 */
+      const worldPerPx = (2 * viewState.camDist * Math.tan(((CAM_FOV / 2) * Math.PI) / 180)) / H;
       const mPerWorld = (111320 * Math.cos((viewState.camLat * Math.PI) / 180)) / U_PER_DEG;
       const mPerPx = Math.max(worldPerPx * mPerWorld, 1e-6);
       // 取一个让线长落在 60~140 px 之间的整数刻度

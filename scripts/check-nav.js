@@ -95,11 +95,27 @@ const R = 110; // EARTH_R，与 app/src/data/globe.ts 一致
     const c = await readCam();
     const dLon = Math.abs(c.lon - lon);
     const dLat = Math.abs(c.lat - lat);
-    log.push({ mode: 'globe', label, clicked: okClick, expect: { lon, lat, r: +expectR.toFixed(1) }, got: c });
+    /* 相机坐标对不代表用户看到的东西对：必须再验一次屏幕正中央拾取到的经纬度。
+       上一版只反解相机位置就报 ok，而显示器上到底是哪块大陆并没有被任何断言覆盖，
+       这正是「测试全绿但用户说定位不对」的来源。 */
+    const center = await page.evaluate(() => window.__ta.pick(0, 0));
+    log.push({
+      mode: 'globe',
+      label,
+      clicked: okClick,
+      expect: { lon, lat, r: +expectR.toFixed(1) },
+      got: c,
+      center,
+    });
     if (!okClick) fail.push(`球面模式点不到「${label}」`);
     if (dLon > 2.5) fail.push(`球面「${label}」经度偏了：期望 ${lon}，实为 ${c.lon}`);
     if (dLat > 2.5) fail.push(`球面「${label}」纬度偏了：期望 ${lat}，实为 ${c.lat}`);
     if (Math.abs(c.r - expectR) > 6) fail.push(`球面「${label}」视距异常：期望 ${expectR.toFixed(0)}，实为 ${c.r}`);
+    if (!center) fail.push(`球面「${label}」屏幕中心拾不到地形（画面中央不是陆地/海面）`);
+    else {
+      if (Math.abs(center.lon - lon) > 3) fail.push(`球面「${label}」屏幕中心经度偏了：期望 ${lon}，实为 ${center.lon}`);
+      if (Math.abs(center.lat - lat) > 3) fail.push(`球面「${label}」屏幕中心纬度偏了：期望 ${lat}，实为 ${center.lat}`);
+    }
   }
   await page.screenshot({ path: 'shots/v-globe-cn.png' });
 

@@ -361,9 +361,15 @@ export function SceneBridge({
       : camera.position.length();
     viewState.camDist = dist;
     /* 比例尺要按纬度折算地面米数（1° 经度的地面长度随 cos(lat) 收缩），
-       目标点纬度每帧算一次，代价只有一次世界坐标反解。 */
+       目标点纬度每帧算一次，代价只有一次世界坐标反解。
+       球面模式下 target 是地心、反解出来恒为图幅中心，必须改读相机所在点的纬度。 */
     if (controls.current) {
-      viewState.camLat = pack.proj.worldToLonLat(controls.current.target.x, controls.current.target.z)[1];
+      if (mix.current > 0.5) {
+        const r = camera.position.length() || 1;
+        viewState.camLat = (Math.asin(camera.position.y / r) * 180) / Math.PI;
+      } else {
+        viewState.camLat = pack.proj.worldToLonLat(controls.current.target.x, controls.current.target.z)[1];
+      }
     }
     const lod = dist > 110 ? 0 : dist > 58 ? 1 : dist > 34 ? 2 : 3;
     if (lod !== viewState.lod) viewState.lod = lod;

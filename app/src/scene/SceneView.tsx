@@ -6,6 +6,7 @@ import type { FieldPack } from '../data/terrainLoader';
 import { mappingOf } from '../data/globe';
 import { shotAt } from '../data/tour';
 import { SceneContext, type SceneHandles } from './SceneContext';
+import { CAM_FOV } from './camera';
 import { TerrainMesh } from './TerrainMesh';
 import { SandTable } from './SandTable';
 import { VectorLayers } from './VectorLayers';
@@ -75,7 +76,7 @@ export function SceneView({ asia, world, compassRef }: Props) {
         <Canvas
           dpr={[1, 2]}
           gl={{ antialias: true, powerPreference: 'high-performance' }}
-          camera={{ fov: 50, near: 0.5, far: 4000, position: initial.pos }}
+          camera={{ fov: CAM_FOV, near: 0.5, far: 4000, position: initial.pos }}
           onCreated={({ camera }) => camera.lookAt(new THREE.Vector3(...initial.tgt))}
         >
           <color attach="background" args={[0x060d16]} />
