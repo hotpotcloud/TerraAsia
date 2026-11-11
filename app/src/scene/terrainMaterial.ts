@@ -379,10 +379,16 @@ export function createTerrainMaterial(opts: TerrainMaterialOpts): TerrainMateria
           vec3 wn = normalize(n + vec3(rip.x, 0.0, rip.y) * 0.032 * ripFade);
           float fres = pow(1.0 - clamp(dot(wn, V), 0.0, 1.0), 4.0);
           vec3 Hv = normalize(Lw + V);
-          float spec = pow(max(dot(wn, Hv), 0.0), 90.0) * ripFade;
+          /* 太阳反光带：必须用**未受微波纹扰动**的法线来算主体。
+             用扰动后的法线时，几百公里的海面都落在高光瓣里，整片海被涂成一层灰白，
+             读起来像起了雾而不是反光；用平面法线则收成一条窄椭圆，才是真的太阳反光带。
+             微波纹只保留一点点碎光（强度更低、指数更小），负责「水面在动」的观感。 */
+          float specGlint = pow(max(dot(n, Hv), 0.0), 1400.0);
+          float specSpark = pow(max(dot(wn, Hv), 0.0), 140.0) * 0.22;
+          float spec = (specGlint + specSpark) * ripFade;
           vec3 wcol = base * (0.62 + 0.38 * max(dot(wn, Lw), 0.0));
           wcol += vec3(0.10, 0.22, 0.36) * fres * 0.55;      // 天光反射，让海面「起镜」
-          wcol += vec3(1.00, 0.94, 0.80) * spec * 0.55;      // 太阳反光带
+          wcol += vec3(1.00, 0.94, 0.80) * spec * 0.40;      // 太阳反光带
           float foam = smoothstep(0.50, 0.60, vW) * (1.0 - smoothstep(0.60, 0.70, vW));
           wcol += vec3(0.55, 0.68, 0.78) * foam * 0.32 * detail;
           wcol *= mix(0.80, 1.0, ao);

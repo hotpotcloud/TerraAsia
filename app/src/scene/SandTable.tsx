@@ -47,14 +47,14 @@ const srgb = (hex: string): RGB => {
 const LIP = 0.9;
 
 /** 断面自上而下：唇线 → 中层岩体 → 沉入暗部的板底 */
-const C_LIP = srgb('#4b5866');
-const C_ROCK_T = srgb('#2b3540');
-const C_ROCK_M = srgb('#212a34');
-const C_ROCK_B = srgb('#161e26');
+const C_LIP = srgb('#7a858f');
+const C_ROCK_T = srgb('#55606b');
+const C_ROCK_M = srgb('#3b4650');
+const C_ROCK_B = srgb('#262f38');
 
 /** 底座：台沿略亮于侧壁（接住顶光的那一圈），侧壁底部几乎融进背景（#060d16） */
-const C_STEP = srgb('#232c36');
-const C_PLINTH_T = srgb('#161e26');
+const C_STEP = srgb('#39434d');
+const C_PLINTH_T = srgb('#242d36');
 const C_PLINTH_B = srgb('#080d12');
 
 export function SandTable({ pack }: { pack: FieldPack }) {
@@ -138,13 +138,67 @@ export function SandTable({ pack }: { pack: FieldPack }) {
     return g;
   }, [pack, exag]);
 
+  /* 断面材质：在顶点色（亮唇线 → 中层岩 → 板底）之上叠一层程序化层理。
+     为什么不用贴图：断面是沿图幅四条边生成的梯形带，uv 没有连续含义，
+     贴图会在转角处拉伸；而层理本来就是「按绝对高度分带」的东西，用世界坐标算最自然。
+     层线加一点沿走向的噪声起伏，避免出现一圈绝对水平的机器感条纹。 */
   const mat = useMemo(
     () =>
-      new THREE.MeshBasicMaterial({
-        vertexColors: true,
-        side: THREE.DoubleSide,
+      new THREE.ShaderMaterial({
+        uniforms: { uOpacity: { value: 1 } },
         transparent: true,
-        opacity: 1,
+        side: THREE.DoubleSide,
+        vertexShader: `
+          attribute vec3 color;
+          varying vec3 vC;
+          varying vec3 vP;
+          void main() {
+            vC = color;
+            vP = position;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          }
+        `,
+        fragmentShader: `
+          uniform float uOpacity;
+          varying vec3 vC;
+          varying vec3 vP;
+
+          float hash(vec2 p) {
+            return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+          }
+          /* 值噪声：层线起伏与岩面颗粒都用它，比逐像素白噪声更像地质体 */
+          float vnoise(vec2 p) {
+            vec2 i = floor(p);
+            vec2 f = fract(p);
+            vec2 u = f * f * (3.0 - 2.0 * f);
+            return mix(
+              mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x),
+              mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x),
+              u.y
+            );
+          }
+
+          void main() {
+            /* 层理沿绝对高度分带，同时被低频噪声扭曲 → 层线略微起伏、不平行 */
+            float warp = (vnoise(vP.xz * 0.035) - 0.5) * 1.6
+                       + (vnoise(vP.xz * 0.13) - 0.5) * 0.45;
+            float band = fract((vP.y + warp) * 0.85);
+
+            /* 层内颗粒：两档噪声叠出粗砂 + 细砂的质感 */
+            float grain = vnoise(vP.xz * 3.1 + vP.y * 2.0) * 0.55
+                        + vnoise(vP.xz * 9.0 - vP.y * 3.0) * 0.25;
+
+            /* 明暗：带中部略亮、带顶略暗，再回落一档 */
+            float shade = 0.80 + 0.26 * band + 0.14 * grain;
+            /* 层与层的界面压一道暗缝，这是「有层理」最直接的读法 */
+            float seam = smoothstep(0.0, 0.07, band) * smoothstep(1.0, 0.93, band);
+            shade *= mix(0.55, 1.0, seam);
+
+            gl_FragColor = vec4(vC * shade, uOpacity);
+            #include <tonemapping_fragment>
+            #include <colorspace_fragment>
+          }
+        `,
       }),
     [],
   );
@@ -155,10 +209,11 @@ export function SandTable({ pack }: { pack: FieldPack }) {
   useFrame(() => {
     const k = 1 - Math.min(1, GLOBE_U.value / 0.12);
     const want = sandbox ? k : 0;
-    if (Math.abs(mat.opacity - want) > 0.004) mat.opacity = want;
+    const u = mat.uniforms.uOpacity as { value: number };
+    if (Math.abs(u.value - want) > 0.004) u.value = want;
     const on = want > 0.01;
     if (groupRef.current && groupRef.current.visible !== on) groupRef.current.visible = on;
-    viewState.wall = mat.opacity;
+    viewState.wall = u.value;
   });
 
   return (
