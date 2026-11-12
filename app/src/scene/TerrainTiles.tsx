@@ -42,7 +42,9 @@ interface Tile {
 /** 该块在给定密度下每个轴的采样点数 */
 function samplesOf(span: number, level: Level): number {
   if (level === 'far') return Math.max(2, Math.floor(span / 2) + 1);
-  if (level === 'near') return span * 2 + 1;
+  /* 1.5 倍而不是 2 倍：2 倍时单块 57 万顶点，重建一次要在主线程停 200 ms 上下，
+     拖动时能感觉到顿；1.5 倍是 33 万顶点，细节提升在屏幕上几乎看不出差别。 */
+  if (level === 'near') return Math.round(span * 1.5) + 1;
   return span + 1;
 }
 
@@ -131,44 +133,74 @@ export function TerrainTiles({ pack, mapping }: { pack: FieldPack; mapping: Mapp
     for (const t of tiles.current) t.built?.setExag(exag);
   }, [exag]);
 
-  /* 逐块挑密度。每帧最多重建一块：单块 near 级有 50 万顶点，
-     连环重建会直接把帧率打穿。 */
+  /* ---------- 分级调度 ----------
+     这是全工程最容易把帧率打穿的地方，四条约束缺一不可：
+     1. **不在每帧重算**：变化只在 260 ms 的评估节拍上判断一次，拖动时不会每帧扫一遍。
+     2. **滞回**：升级与降级用不同的阈值（`*1.25` / `/1.15`），否则相机停在阈值附近时
+        一块瓦片会在两档之间反复重建，看起来就是持续卡顿。
+     3. **节流**：任意两次重建之间至少隔 200 ms；单块 near 有 57 万顶点，连环重建必然掉帧。
+     4. **near 只给最近的一块**：两块同时 2 倍密度就是 115 万顶点，收益却看不出来。 */
   const rebuildCursor = useRef(0);
+  const lastEval = useRef(0);
+  const lastBuild = useRef(0);
+
   useFrame(() => {
     const list = tiles.current;
     if (!list.length) return;
+    const now = performance.now();
+    const booting = list.some((t) => !t.built);
+    if (!booting && now - lastEval.current < 260) return;
+    lastEval.current = now;
+
     const globe = GLOBE_U.value > 0.5;
     const cam = camera.position;
 
-    const wantOf = (t: Tile): Level => {
-      let d: number;
-      if (globe) {
-        // 球面模式要按球面坐标量距离，平面世界坐标在那里没有意义
-        const [lon, lat] = pack.proj.worldToLonLat(t.center[0], t.center[1]);
-        const dir = lonLatToDir(lon, lat);
-        d = Math.hypot(
-          cam.x - dir[0] * 110,
-          cam.y - dir[1] * 110,
-          cam.z - dir[2] * 110,
-        );
-      } else {
-        d = Math.hypot(cam.x - t.center[0], cam.z - t.center[1]);
+    /** 到块中心的距离（球面模式按球面坐标量，平面世界坐标在那里没有意义） */
+    const distOf = (t: Tile): number => {
+      if (!globe) return Math.hypot(cam.x - t.center[0], cam.z - t.center[1]);
+      const [lon, lat] = pack.proj.worldToLonLat(t.center[0], t.center[1]);
+      const dir = lonLatToDir(lon, lat);
+      return Math.hypot(cam.x - dir[0] * 110, cam.y - dir[1] * 110, cam.z - dir[2] * 110);
+    };
+
+    const dists = list.map(distOf);
+    let nearest = 0;
+    for (let i = 1; i < dists.length; i++) if (dists[i] < dists[nearest]) nearest = i;
+
+    /** 带滞回的目标档位 */
+    const wantAt = (i: number): Level => {
+      const d = dists[i];
+      const cur = list[i].level;
+      if (cur === 'near') {
+        if (d > D_NEAR * 1.25) return d > D_MID * 1.1 ? 'far' : 'mid';
+        return 'near';
       }
-      return d < D_NEAR ? 'near' : d < D_MID ? 'mid' : 'far';
+      if (cur === 'far') {
+        if (d < D_MID / 1.15) return d < D_NEAR / 1.25 ? 'near' : 'mid';
+        return 'far';
+      }
+      if (i === nearest && d < D_NEAR / 1.25) return 'near';
+      if (d > D_MID * 1.1) return 'far';
+      return 'mid';
     };
 
     let builtChanged = false;
     for (let k = 0; k < list.length; k++) {
-      const t = list[(rebuildCursor.current + k) % list.length];
-      const want = wantOf(t);
-      if (want === t.level && t.built) continue;
+      if (!booting && now - lastBuild.current < 200) break;
+      const i = (rebuildCursor.current + k) % list.length;
+      const t = list[i];
+      const want = wantAt(i);
+      /* near 只允许最近的一块：其它块即使落进 near 区间也压回 mid */
+      const level: Level = want === 'near' && i !== nearest ? 'mid' : want;
+      if (level === t.level && t.built) continue;
 
-      const nx = samplesOf(t.rect.i1 - t.rect.i0, want);
-      const ny = samplesOf(t.rect.j1 - t.rect.j0, want);
+      const nx = samplesOf(t.rect.i1 - t.rect.i0, level);
+      const ny = samplesOf(t.rect.j1 - t.rect.j0, level);
       t.built?.geometry.dispose();
       t.built = buildTileGeometry(pack, exagRef.current, t.rect, nx, ny);
-      t.level = want;
-      rebuildCursor.current = (rebuildCursor.current + k + 1) % list.length;
+      t.level = level;
+      rebuildCursor.current = (i + 1) % list.length;
+      lastBuild.current = now;
       builtChanged = true;
       break;
     }

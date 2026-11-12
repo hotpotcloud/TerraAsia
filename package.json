@@ -28,7 +28,8 @@
     "deploy:setup": "bash deploy/setup-server.sh",
     "check:func": "node scripts/check-func.js",
     "check:sandbox": "node scripts/check-sandbox.js",
-    "check:nav": "node scripts/check-nav.js"
+    "check:nav": "node scripts/check-nav.js",
+    "check:profile": "node scripts/check-profile.js"
   },
   "keywords": [
     "three.js",

@@ -286,6 +286,13 @@ export function SceneBridge({
         ((e.clientX - r.left) / r.width) * 2 - 1,
         -((e.clientY - r.top) / r.height) * 2 + 1,
       );
+      /* 剖面取点模式：点击只用来取线路端点，不改省份选中。
+         取不到地面就不推进，免得把端点落在虚空里。 */
+      const st = useAppStore.getState();
+      if (st.profilePick > 0) {
+        if (hit) st.addProfilePoint(hit.lon, hit.lat);
+        return;
+      }
       const pv = hit?.prov ? provinces.current.find((p) => p.name === hit.prov) : null;
       select(pv ? { name: pv.name, avg: pv.avg, tier: pv.tier } : null);
     };
@@ -308,6 +315,8 @@ export function SceneBridge({
   useFrame((_, dt) => {
     const now = performance.now();
     frames.current++;
+    /* 平滑帧率：单帧抖动没有参考价值，指数平均后才是「手感」 */
+    if (dt > 0.0005) viewState.fps = viewState.fps * 0.9 + (1 / Math.min(dt, 1)) * 0.1;
 
     // 形变过渡：按时间推进，不按帧插值 —— 低帧率下指数插值会卡在中间态
     if (Math.abs(mix.current - tween.current.to) > 1e-5) {
@@ -499,6 +508,7 @@ export function SceneBridge({
         frames: frames.current,
         /** 补间剩余毫秒；null = 当前没有相机补间 */
         animLeft: anim.current ? Math.max(0, Math.round(anim.current.t0 + anim.current.dur - performance.now())) : null,
+        fps: +viewState.fps.toFixed(1),
         flyKind: useAppStore.getState().flyKind,
         flyKey: useAppStore.getState().flyKey,
         /** 沙盘断面侧壁不透明度：0 = 已收起（关闭底座 / 已切到球面） */

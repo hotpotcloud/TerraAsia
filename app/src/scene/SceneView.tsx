@@ -1,15 +1,17 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import type { FieldPack } from '../data/terrainLoader';
 import { mappingOf } from '../data/globe';
 import { shotAt } from '../data/tour';
+import { setProfilePack } from '../data/profile';
 import { SceneContext, type SceneHandles } from './SceneContext';
 import { CAM_FOV } from './camera';
 import { TerrainMesh } from './TerrainMesh';
 import { TerrainTiles } from './TerrainTiles';
 import { SandTable } from './SandTable';
+import { ProfileLine } from './ProfileLine';
 import { VectorLayers } from './VectorLayers';
 import { FlowLayers } from './FlowLayers';
 import { GlobeDecor } from './GlobeDecor';
@@ -29,6 +31,7 @@ export function SceneView({ asia, world, compassRef }: Props) {
   const controls = useRef<OrbitLike | null>(null);
   const exag = useAppStore((s) => s.exag);
   const tiles = useAppStore((s) => s.tiles);
+  const picking = useAppStore((s) => s.profilePick > 0);
 
   const data = useMemo(
     () => ({
@@ -50,6 +53,12 @@ export function SceneView({ asia, world, compassRef }: Props) {
     tex.minFilter = THREE.LinearFilter;
     tex.magFilter = THREE.LinearFilter;
     return { asiaUniforms: null, worldUniforms: null, selCanvas: canvas, selCtx: ctx, selTex: tex };
+  }, [asia]);
+
+  /* 剖面采样器拿到同一份数值场：剖面不经过 React，也不需要每次渲染重新取包 */
+  useEffect(() => {
+    setProfilePack(asia);
+    return () => setProfilePack(null);
   }, [asia]);
 
   const initial = useMemo(() => shotAt(asia, exag, 0), [asia, exag]);
@@ -87,6 +96,7 @@ export function SceneView({ asia, world, compassRef }: Props) {
           {/* 分块 LOD 与单网格二选一：两者同时绘制同一区域会重新引入共面穿插 */}
           {tiles ? <TerrainTiles pack={asia} mapping={data.asiaMap} /> : <TerrainMesh pack={asia} mapping={data.asiaMap} />}
           <SandTable pack={asia} />
+          <ProfileLine pack={asia} mapping={data.asiaMap} />
           <VectorLayers />
           <FlowLayers />
           <GlobeDecor />
@@ -102,7 +112,7 @@ export function SceneView({ asia, world, compassRef }: Props) {
           <SceneBridge controls={controls} compassRef={compassRef} />
           {host && <LabelLayer host={host} />}
         </Canvas>
-        <div className="labels-layer" ref={setHost} />
+        <div className={`labels-layer${picking ? ' picking' : ''}`} ref={setHost} />
       </div>
     </SceneContext.Provider>
   );

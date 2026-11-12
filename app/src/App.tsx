@@ -9,6 +9,7 @@ import { SceneView } from './scene/SceneView';
 import { Compass, DerivedLegend, Foot, Hint, LoadingScreen, Plate, TopBar } from './ui/Chrome';
 import { WorkPanel } from './ui/SidePanel';
 import { DetailCard } from './ui/DetailCard';
+import { ProfilePanel } from './ui/ProfilePanel';
 import { useAppStore } from './state/store';
 
 const BASE = `${import.meta.env.BASE_URL}data/`;
@@ -111,6 +112,7 @@ export default function App() {
           <TopBar />
           <WorkPanel />
           <DetailCard />
+          <ProfilePanel />
           <Compass innerRef={compassRef} />
           <DerivedLegend />
           <Plate />

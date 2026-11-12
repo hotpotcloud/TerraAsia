@@ -50,6 +50,9 @@ export function TopBar() {
   const openPanel = useAppStore((s) => s.openPanel);
   const fly = useAppStore((s) => s.fly);
   const autoTour = useAppStore((s) => s.autoTour);
+  const profilePick = useAppStore((s) => s.profilePick);
+  const startProfile = useAppStore((s) => s.startProfile);
+  const cancelProfile = useAppStore((s) => s.cancelProfile);
 
   const tool: { kind: PanelKind; label: string }[] = [
     { kind: 'layers', label: '图层' },
@@ -81,6 +84,17 @@ export function TopBar() {
           </button>
           <button className="tb" onClick={() => fly('step')} title="当前导览机位">
             导览位
+          </button>
+        </div>
+
+        {/* 剖面：点两下画一条线，读出距离与海拔 */}
+        <div className="tb-seg">
+          <button
+            className={`tb ${profilePick ? 'on' : ''}`}
+            onClick={() => (profilePick ? cancelProfile() : startProfile())}
+            title="在地图上点两点，读出线路高程剖面"
+          >
+            {profilePick ? '取点中…' : '剖面'}
           </button>
         </div>
 

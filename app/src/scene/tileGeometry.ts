@@ -91,9 +91,12 @@ export function buildTileGeometry(
   const aEdge = new Float32Array(total);
   const aOverlay = new Float32Array(total);
 
-  /* 网格坐标缓存：换夸张度时要重算 Y 与法线，必须知道每个顶点在原图幅里的位置 */
-  const gxArr = new Float32Array(total);
-  const gyArr = new Float32Array(total);
+  /* 梯度缓存：法线只取决于「坡度 × 夸张比」，而坡度本身与夸张无关。
+     建块时用整幅高度场把 ∂h/∂x、∂h/∂z（1× 夸张下）算一遍存下来，之后拖「地形起伏」
+     滑块只需乘一个系数再归一化 —— 从每顶点 4 次双线性采样降到 2 乘 1 开方，
+     滑块才拖得动（否则 16 块 × 230 万顶点 ≈ 900 万次纹理采样，一拖就卡住）。 */
+  const ghx = new Float32Array(n);
+  const ghz = new Float32Array(n);
   const src = new Uint32Array(total); // 顶点 → 网格序号（裙边顶点复用其源顶点）
 
   for (let jj = 0; jj < ny; jj++) {
@@ -101,8 +104,6 @@ export function buildTileGeometry(
     for (let ii = 0; ii < nx; ii++) {
       const gx = rect.i0 + (spanI * ii) / (nx - 1);
       const k = jj * nx + ii;
-      gxArr[k] = gx;
-      gyArr[k] = gy;
       src[k] = k;
 
       const elev = bilinear(pack.elevW, GW, GH, gx, gy);
@@ -145,8 +146,6 @@ export function buildTileGeometry(
   for (const k of ring) {
     skirtOf.push(v);
     src[v] = k;
-    gxArr[v] = gxArr[k];
-    gyArr[v] = gyArr[k];
     pos[v * 3] = pos[k * 3];
     pos[v * 3 + 1] = pos[k * 3 + 1];
     pos[v * 3 + 2] = pos[k * 3 + 2];
@@ -196,20 +195,30 @@ export function buildTileGeometry(
   geometry.setAttribute('aOverlay', new THREE.BufferAttribute(aOverlay, 1));
   geometry.setIndex(idx);
 
-  /** 解析法线：从整幅高度场取中心差分，与分块方式、采样密度都无关 */
-  const writeNormals = (ex: number) => {
-    const yUp = ex * proj.V0;
+  /* 坡度（1× 夸张下的 ∂h/∂x、∂h/∂z）：从整幅高度场取中心差分，与分块方式、
+     采样密度都无关 —— 同一处无论属于哪块、哪一级密度，梯度完全相同，拼接无缝。 */
+  {
     const dx = 2 * NORMAL_R * cx;
     const dz = 2 * NORMAL_R * cz;
+    const v0 = proj.V0;
     for (let k = 0; k < n; k++) {
-      const gx = gxArr[k];
-      const gy = gyArr[k];
-      const hE = bilinear(pack.elevW, GW, GH, gx + NORMAL_R, gy) * yUp;
-      const hW = bilinear(pack.elevW, GW, GH, gx - NORMAL_R, gy) * yUp;
-      const hS = bilinear(pack.elevW, GW, GH, gx, gy + NORMAL_R) * yUp;
-      const hN = bilinear(pack.elevW, GW, GH, gx, gy - NORMAL_R) * yUp;
-      const nxv = -(hE - hW) / dx;
-      const nzv = -(hS - hN) / dz;
+      const r = src[k];
+      const gx = rect.i0 + (spanI * (r % nx)) / (nx - 1);
+      const gy = rect.j0 + (spanJ * Math.floor(r / nx)) / (ny - 1);
+      const hE = bilinear(pack.elevW, GW, GH, gx + NORMAL_R, gy) * v0;
+      const hW = bilinear(pack.elevW, GW, GH, gx - NORMAL_R, gy) * v0;
+      const hS = bilinear(pack.elevW, GW, GH, gx, gy + NORMAL_R) * v0;
+      const hN = bilinear(pack.elevW, GW, GH, gx, gy - NORMAL_R) * v0;
+      ghx[k] = (hE - hW) / dx;
+      ghz[k] = (hS - hN) / dz;
+    }
+  }
+
+  /** 法线 = normalize(-ex·∂h/∂x, 1, -ex·∂h/∂z)，只随夸张比线性变化 */
+  const writeNormals = (ex: number) => {
+    for (let k = 0; k < n; k++) {
+      const nxv = -ghx[k] * ex;
+      const nzv = -ghz[k] * ex;
       const L = Math.hypot(nxv, 1, nzv) || 1;
       nrm[k * 3] = nxv / L;
       nrm[k * 3 + 1] = 1 / L;

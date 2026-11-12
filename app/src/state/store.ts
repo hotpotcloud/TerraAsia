@@ -28,6 +28,18 @@ export type LayerKey =
 
 export type LabelGroupKey = 'm' | 't' | 'r' | 'c' | 'n' | 'nf' | 's' | 'x' | 'rl' | 'rd';
 
+/** 剖面的一个端点（经纬度） */
+export interface ProfilePoint {
+  lon: number;
+  lat: number;
+}
+
+/** 一条待剖的线路：先有起点，第二次点击才有终点 */
+export interface Profile {
+  a: ProfilePoint;
+  b: ProfilePoint | null;
+}
+
 export interface ProvinceInfo {
   name: string;
   avg: number;
@@ -61,6 +73,13 @@ interface AppState {
    * 远处的块降采样。关掉退回单张网格（`docs/11 §6.1` 的回退路径）。
    */
   tiles: boolean;
+
+  /**
+   * 线路剖面（docs/10 R03b）：在地图上点两个点画一条线，展示距离 / 海拔剖面。
+   * `profilePick` 是取点进度：0 = 未在取点，1 = 等起点，2 = 等终点。
+   */
+  profile: Profile | null;
+  profilePick: 0 | 1 | 2;
 
   layers: Record<LayerKey, boolean>;
   labelGroups: Record<LabelGroupKey, boolean>;
@@ -99,6 +118,13 @@ interface AppState {
   setAO(on: boolean): void;
   setSandbox(on: boolean): void;
   setTiles(on: boolean): void;
+  /** 进入剖面取点：点两下画出线路 */
+  startProfile(): void;
+  /** 退出取点但保留已画的线 */
+  cancelProfile(): void;
+  /** 清掉线路 */
+  clearProfile(): void;
+  addProfilePoint(lon: number, lat: number): void;
 
   toggleLayer(key: LayerKey): void;
   setLayer(key: LayerKey, on: boolean): void;
@@ -144,6 +170,8 @@ export const useAppStore = create<AppState>((set) => ({
   ao: true,
   sandbox: true,
   tiles: true,
+  profile: null,
+  profilePick: 0,
 
   layers: {
     coast: true,
@@ -188,6 +216,16 @@ export const useAppStore = create<AppState>((set) => ({
   setAO: (ao) => set({ ao }),
   setSandbox: (sandbox) => set({ sandbox }),
   setTiles: (tiles) => set({ tiles }),
+  startProfile: () => set({ profile: null, profilePick: 1 }),
+  cancelProfile: () => set({ profilePick: 0 }),
+  clearProfile: () => set({ profile: null, profilePick: 0 }),
+  addProfilePoint: (lon, lat) =>
+    set((s) => {
+      if (s.profilePick === 1) return { profile: { a: { lon, lat }, b: null }, profilePick: 2 as const };
+      if (s.profilePick === 2 && s.profile)
+        return { profile: { a: s.profile.a, b: { lon, lat } }, profilePick: 0 as const };
+      return {};
+    }),
 
   toggleLayer: (key) => set((s) => ({ layers: { ...s.layers, [key]: !s.layers[key] } })),
   setLayer: (key, on) => set((s) => ({ layers: { ...s.layers, [key]: on } })),

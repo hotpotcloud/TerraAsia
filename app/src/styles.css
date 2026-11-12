@@ -531,3 +531,103 @@ input[type='range'] { flex: 1; accent-color: #38bdf8; }
 @media (max-width: 900px) {
   .plate { display: none; }
 }
+
+/* ---------- 线路剖面（docs/10 R03b） ---------- */
+.pf-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 78px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px 7px 12px;
+  border-radius: 999px;
+  background: rgba(9, 16, 25, 0.88);
+  border: 1px solid rgba(120, 180, 240, 0.32);
+  color: #cfe6ff;
+  font-size: 12px;
+  pointer-events: auto;
+}
+.pf-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #5fb3ff;
+  animation: pf-pulse 1.6s ease-in-out infinite;
+}
+@keyframes pf-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(95, 179, 255, 0.55); }
+  50% { box-shadow: 0 0 0 5px rgba(95, 179, 255, 0); }
+}
+
+.profile {
+  position: absolute;
+  left: 12px;
+  bottom: 74px;
+  width: min(552px, calc(100vw - 24px));
+  padding: 10px 12px 8px;
+  border-radius: 10px;
+  background: rgba(8, 14, 22, 0.9);
+  border: 1px solid rgba(120, 170, 220, 0.22);
+  backdrop-filter: blur(8px);
+  pointer-events: auto;
+}
+.pf-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+.pf-title {
+  font-size: 13px;
+  color: #dfeaf5;
+}
+.pf-meta {
+  font-size: 11px;
+  color: #8fa8bf;
+}
+.pf-x {
+  margin-left: auto;
+  background: none;
+  border: 0;
+  color: #8fb0cc;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+}
+.pf-x:hover {
+  color: #fff;
+}
+.pf-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.pf-ax {
+  fill: #7c93a8;
+  font-size: 9px;
+}
+.pf-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 11px;
+  color: #8fa8bf;
+  margin-top: 2px;
+}
+.pf-foot b {
+  color: #cfe6ff;
+  font-weight: 600;
+}
+.pf-gap {
+  color: #e0a24a;
+}
+
+/* 剖面取点期间，标注不再拦截点击：否则点到某个景区名就等于「点开详情卡」，
+   线路端点落不下去（实测第二下常被标注吃掉）。 */
+.labels-layer.picking .lb {
+  pointer-events: none !important;
+  cursor: crosshair;
+}
